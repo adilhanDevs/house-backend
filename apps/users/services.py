@@ -50,8 +50,8 @@ def generate_code(length: int | None = None) -> str:
 
 
 def uses_static_code(phone: str) -> bool:
-    """В отладке и для тестовых номеров код фиксирован, SMS не отправляется."""
-    return bool(settings.DEBUG) or phone in settings.OTP_TEST_PHONES
+    """Всегда возвращаем статический код (0000) без отправки SMS."""
+    return True
 
 
 def issue_otp(phone: str, purpose: str = OtpPurpose.LOGIN) -> tuple[OtpCode, bool]:
