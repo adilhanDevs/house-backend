@@ -179,26 +179,51 @@ def run():
                 print(f"   ⚠️ Не удалось загрузить фото: {err}")
 
         # Добавляем видео к объявлению
-        if idx == 1:
-            try:
-                print("   🎬 Загружаем видео...")
-                req = urllib.request.Request(sample_video_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    v_content = resp.read()
-                    v_media = ListingMedia(
-                        listing=listing,
-                        kind=MediaKind.VIDEO,
-                        order=10,
-                        is_cover=False,
-                        status=MediaStatus.READY,
-                        duration_seconds=15,
-                    )
-                    v_media.file.save(f"video_{listing.id}.mp4", ContentFile(v_content), save=False)
-                    v_media.url_original.save(f"video_{listing.id}.mp4", ContentFile(v_content), save=False)
-                    v_media.save()
-                    print("   ✅ Видео успешно прикреплено к объявлению!")
-            except Exception as err:
-                print(f"   ⚠️ Ошибка при загрузке видео: {err}")
+        try:
+            video_content = None
+            local_video_paths = [
+                os.path.join(os.path.dirname(__file__), "sample_videos", "sample_video.mp4"),
+                os.path.join(os.path.dirname(__file__), "..", "flutter_app", "assets", "videos_obzor", "video_3.mp4"),
+                os.path.join(os.path.dirname(__file__), "..", "flutter_app", "assets", "videos_obzor", f"video_{idx}.mp4"),
+            ]
+            for v_path in local_video_paths:
+                if os.path.exists(v_path):
+                    with open(v_path, "rb") as f:
+                        video_content = f.read()
+                    print(f"   🎬 Использован локальный видеофайл: {os.path.basename(v_path)} ({len(video_content)} байт)")
+                    break
+
+            if not video_content:
+                # Fallback download URLs
+                urls = [
+                    "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/person-bicycle-car-detection.mp4",
+                    "https://archive.org/download/BigBuckBunny_328/BigBuckBunny_512kb.mp4",
+                ]
+                for u in urls:
+                    try:
+                        req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+                        with urllib.request.urlopen(req, timeout=10) as resp:
+                            video_content = resp.read()
+                            print(f"   🎬 Видео успешно скачано ({len(video_content)} байт)")
+                            break
+                    except Exception:
+                        continue
+
+            if video_content:
+                v_media = ListingMedia(
+                    listing=listing,
+                    kind=MediaKind.VIDEO,
+                    order=10,
+                    is_cover=False,
+                    status=MediaStatus.READY,
+                    duration_seconds=15,
+                )
+                v_media.file.save(f"video_{listing.id}.mp4", ContentFile(video_content), save=False)
+                v_media.url_original.save(f"video_{listing.id}.mp4", ContentFile(video_content), save=False)
+                v_media.save()
+                print(f"   ✅ Видео успешно прикреплено к объявлению #{idx}!")
+        except Exception as err:
+            print(f"   ⚠️ Ошибка при сохранении видео: {err}")
 
     print("\n🎉 Все данные успешно созданы и готовы к работе!")
     print("👤 Логин продавца: +996555444333")
