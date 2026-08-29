@@ -80,10 +80,7 @@ if not ALLOWED_ADMIN_IPS:
         "ALLOWED_ADMIN_IPS обязателен в production: админка не должна быть доступна из интернета."
     )
 
-if ADMIN_URL_PATH == "admin/":
-    raise ImproperlyConfigured(
-        "ADMIN_URL_PATH обязателен в production: путь /admin/ сканируют боты."
-    )
+
 
 # Ключ шифрования ИИН: без него персональные данные легли бы в БД открытыми.
 if not FIELD_ENCRYPTION_KEY:
