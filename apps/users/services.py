@@ -245,7 +245,8 @@ def authenticate_pro(phone: str, password: str) -> User:
         User().check_password(password)
         raise InvalidCredentialsError(LOGIN_FAILED_MESSAGE)
 
-    if not (user.is_active and user.is_pro and user.check_password(password)):
+    is_seller_or_pro = bool(user.is_pro or hasattr(user, "seller_profile") or user.is_staff or user.is_superuser)
+    if not (user.is_active and is_seller_or_pro and user.check_password(password)):
         audit(
             actor=user,
             action=AuditLog.Action.PASSWORD_LOGIN,
