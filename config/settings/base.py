@@ -299,6 +299,12 @@ BANK_PAYMENT_MERCHANT_ID = env.str("BANK_PAYMENT_MERCHANT_ID", default="")
 BANK_PAYMENT_SECRET = env.str("BANK_PAYMENT_SECRET", default="")
 BANK_PAYMENT_TIMEOUT = env.int("BANK_PAYMENT_TIMEOUT", default=15)
 
+# Шлюз Finik Pay (finik.kg)
+FINIK_API_URL = env.str("FINIK_API_URL", default="https://api.finik.kg/v1")
+FINIK_MERCHANT_ID = env.str("FINIK_MERCHANT_ID", default="")
+FINIK_SECRET_KEY = env.str("FINIK_SECRET_KEY", default="")
+FINIK_TIMEOUT = env.int("FINIK_TIMEOUT", default=15)
+
 # ----------------------------------------------------------------------------
 # Push-уведомления (FCM)
 # ----------------------------------------------------------------------------
