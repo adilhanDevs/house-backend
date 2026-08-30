@@ -91,6 +91,9 @@ class Command(BaseCommand):
                 )
             )
 
+        if options["probe"] or options["introspect"]:
+            self._network_report()
+
         if options["introspect"]:
             self._run(
                 "Схема типа Item",
@@ -107,6 +110,43 @@ class Command(BaseCommand):
                 _GET_ITEM_QUERY,
                 {"input": {"id": "finik-check-probe", "keyType": "TRANSACTION_ID"}},
                 self._print_payload,
+            )
+
+    def _network_report(self) -> None:
+        """Что видно до GraphQL: прокси, DNS, TCP. Отделяет «шлюз не отвечает»
+        от «наружу вообще не пускают» — например на бесплатном PythonAnywhere,
+        где исходящие идут только через proxy.server и только на белый список.
+        """
+        import os
+        import socket
+        from urllib.parse import urlparse
+
+        self.stdout.write(self.style.MIGRATE_HEADING("\nСеть"))
+
+        proxies = {
+            name: os.environ.get(name, "")
+            for name in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY")
+        }
+        active = {k: v for k, v in proxies.items() if v}
+        self.stdout.write(f"  Прокси в окружении: {active or 'не заданы'}")
+
+        host = urlparse(_graphql_url()).hostname or ""
+        try:
+            addresses = sorted({info[4][0] for info in socket.getaddrinfo(host, 443)})
+            self.stdout.write(self.style.SUCCESS(f"  DNS {host} -> {', '.join(addresses)}"))
+        except OSError as exc:
+            self.stdout.write(self.style.ERROR(f"  DNS {host}: {exc}"))
+            return
+
+        try:
+            with socket.create_connection((host, 443), timeout=10):
+                self.stdout.write(self.style.SUCCESS(f"  TCP {host}:443 — соединение есть"))
+        except OSError as exc:
+            self.stdout.write(self.style.ERROR(f"  TCP {host}:443: {exc}"))
+            self.stdout.write(
+                "  Наружу не пускают. На бесплатном PythonAnywhere исходящие\n"
+                "  разрешены только через proxy.server:3128 и только на сайты\n"
+                "  из белого списка — Finik туда не входит."
             )
 
     def _run(self, title: str, query: str, variables: dict, printer: Any) -> None:

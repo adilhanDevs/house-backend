@@ -102,7 +102,7 @@ class FinikVerificationUnavailable(Exception):
     def __init__(self, code: str, provider_message: str = "") -> None:
         super().__init__(code)
         self.code = code
-        self.provider_message = provider_message[:240]
+        self.provider_message = provider_message[:600]
 
 
 def _graphql_url() -> str:
@@ -168,11 +168,18 @@ def _finik_graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
         payload = response.json()
     except requests.HTTPError as exc:
         status_code = getattr(exc.response, "status_code", None) or "unknown"
-        raise FinikVerificationUnavailable(f"finik_http_{status_code}") from exc
+        body = ""
+        if exc.response is not None:
+            body = " ".join(str(exc.response.text or "").split())
+        raise FinikVerificationUnavailable(f"finik_http_{status_code}", body) from exc
     except requests.Timeout as exc:
-        raise FinikVerificationUnavailable("finik_timeout") from exc
+        raise FinikVerificationUnavailable("finik_timeout", str(exc)) from exc
     except (requests.RequestException, ValueError) as exc:
-        raise FinikVerificationUnavailable("finik_network_error") from exc
+        # Текст исключения обязателен: без него «сеть не работает» неотличимо
+        # от «нет DNS», «блокирует прокси» и «шлюз вернул не JSON».
+        raise FinikVerificationUnavailable(
+            "finik_network_error", f"{type(exc).__name__}: {exc}"
+        ) from exc
 
     if not isinstance(payload, dict):
         raise FinikVerificationUnavailable("finik_invalid_response")
