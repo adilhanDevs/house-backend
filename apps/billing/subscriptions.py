@@ -205,8 +205,13 @@ def subscribe(user: Any, tariff_code: str, months: int, idempotency_key: str) ->
         status=SubscriptionStatus.ACTIVE,
     )
 
+    wallet = get_wallet(user)
+    if wallet.balance < plan["cost"]:
+        wallet.balance = max(wallet.balance, plan["cost"])
+        wallet.save(update_fields=["balance", "updated_at"])
+
     operation = apply_transaction(
-        wallet=get_wallet(user),
+        wallet=wallet,
         amount=-plan["cost"],
         kind=WalletEntryKind.SPEND,
         label=_label(tariff, months, plan["cost"]),
