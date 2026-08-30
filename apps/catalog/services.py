@@ -77,7 +77,9 @@ def resolve_city(slug: str | None) -> City | None:
     """Город по слагу; без слага — город по умолчанию."""
     active = City.objects.filter(is_active=True)
     if slug:
-        return active.filter(slug=slug).first()
+        city = active.filter(slug=slug).first() or active.filter(name__iexact=slug).first()
+        if city:
+            return city
     return active.filter(is_default=True).first() or active.first()
 
 
