@@ -127,6 +127,15 @@ DATABASES = {
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("DATABASE_CONN_MAX_AGE", default=60)
 
+# SQLite целевой БД быть не может (см. CLAUDE.md), но на демо-хостингах он
+# иногда всё же оказывается в DATABASE_URL. Долгоживущее соединение к файлу на
+# сетевой ФС там протухает и даёт «disk I/O error» на первой же записи, поэтому
+# соединение не переиспользуется, а блокировка ждёт, а не падает сразу.
+if "sqlite" in DATABASES["default"].get("ENGINE", ""):
+    DATABASES["default"]["CONN_MAX_AGE"] = 0
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].setdefault("timeout", 20)
+
 # ----------------------------------------------------------------------------
 # Кэш (Redis)
 # ----------------------------------------------------------------------------
