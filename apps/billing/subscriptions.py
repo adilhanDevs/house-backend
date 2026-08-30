@@ -31,9 +31,21 @@ logger = logging.getLogger(__name__)
 MONTH_DAYS = 30
 FREE_TARIFF_CODE = "free"
 
+TARIFF_ALIASES = {
+    "owner": "free",
+    "top": "realtor",
+    "vip": "realtor",
+    "premium": "agency",
+}
+
 
 def get_tariff(code: str) -> Tariff:
-    tariff = Tariff.objects.filter(code=code, is_active=True).first()
+    resolved_code = TARIFF_ALIASES.get(code, code)
+    tariff = Tariff.objects.filter(code=resolved_code, is_active=True).first()
+    if tariff is None:
+        tariff = Tariff.objects.filter(code=code, is_active=True).first()
+    if tariff is None:
+        tariff = Tariff.objects.first()
     if tariff is None:
         raise ApiValidationError("Неизвестный тариф.", {"tariff_code": code})
     return tariff
