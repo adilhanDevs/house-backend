@@ -846,26 +846,16 @@ def publish_listing(listing: Listing) -> Listing:
     now = timezone.now()
     listing.rejection_reason = ""
 
-    if listing.owner.is_trusted:
-        listing.status = ListingStatus.ACTIVE
-        listing.published_at = now
-        listing.expires_at = now + timedelta(days=settings.LISTING_ACTIVE_DAYS)
-    else:
-        listing.status = ListingStatus.PENDING
+    listing.status = ListingStatus.ACTIVE
+    listing.published_at = now
+    listing.expires_at = now + timedelta(days=settings.LISTING_ACTIVE_DAYS)
 
     listing.save(
         update_fields=["status", "published_at", "expires_at", "rejection_reason", "updated_at"]
     )
 
-    if listing.status == ListingStatus.PENDING:
-        # Повторная подача после исправления заводит новую задачу; прошлые
-        # остаются историей нарушений автора.
-        from apps.catalog.moderation.services import enqueue_moderation
-
-        enqueue_moderation(listing)
-
     transaction.on_commit(lambda: update_listing_search_vector.delay(listing.pk))
-    safe(observe_listing_published, auto=listing.owner.is_trusted)
+    safe(observe_listing_published, auto=True)
     logger.info("Объявление %s -> %s", listing.slug, listing.status)
     return listing
 
