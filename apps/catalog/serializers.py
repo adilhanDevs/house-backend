@@ -26,6 +26,8 @@ def absolute_file_url(file_field: Any, request: Any) -> str | None:
     if not file_field:
         return None
     url = file_field.url
+    if url.startswith("/media/"):
+        url = "/api/v1" + url
     return request.build_absolute_uri(url) if request else url
 
 
@@ -343,6 +345,17 @@ class ListingDetailSerializer(ListingListSerializer):
             "address",
             "latitude",
             "longitude",
+            "living_room_area",
+            "hall_area",
+            "kitchen_area",
+            "bedroom_area",
+            "bedroom_2_area",
+            "balcony_area",
+            "bathroom_area",
+            "furniture",
+            "has_direct_sale",
+            "has_mortgage",
+            "landmarks",
             "builder",
             "allow_media_download",
             "views_count",
@@ -446,6 +459,17 @@ class ListingUpdateSerializer(serializers.ModelSerializer):
             "address",
             "rooms",
             "area",
+            "living_room_area",
+            "hall_area",
+            "kitchen_area",
+            "bedroom_area",
+            "bedroom_2_area",
+            "balcony_area",
+            "bathroom_area",
+            "furniture",
+            "has_direct_sale",
+            "has_mortgage",
+            "landmarks",
             "land_area",
             "floor",
             "floors",

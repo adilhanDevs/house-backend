@@ -113,8 +113,83 @@ class ListingAdmin(admin.ModelAdmin):
     search_fields = ["slug", "address", "description"]
     autocomplete_fields = ["city", "district", "builder", "series", "owner"]
     list_select_related = ["district", "city"]
-    # Счётчики денормализованы и меняются только сервисами — руками не правим.
     readonly_fields = ["slug", "views_count", "favourites_count", "search_vector", "bumped_at"]
+
+    fieldsets = [
+        (
+            "Основная информация",
+            {
+                "fields": [
+                    "slug",
+                    "owner",
+                    "status",
+                    "kind",
+                    "seller_kind",
+                    "city",
+                    "district",
+                    "address",
+                    ("latitude", "longitude"),
+                    ("price", "currency"),
+                    "old_price",
+                    "description",
+                ]
+            },
+        ),
+        (
+            "Общая информация (квадратуры комнат)",
+            {
+                "fields": [
+                    "area",
+                    "rooms",
+                    ("floor", "floors"),
+                    ("living_room_area", "hall_area"),
+                    ("kitchen_area", "bathroom_area"),
+                    ("bedroom_area", "bedroom_2_area"),
+                    "balcony_area",
+                    "furniture",
+                ]
+            },
+        ),
+        (
+            "Ключевые места и покупка",
+            {
+                "fields": [
+                    "landmarks",
+                    ("has_direct_sale", "has_mortgage"),
+                ]
+            },
+        ),
+        (
+            "Дополнительные параметры",
+            {
+                "fields": [
+                    "series",
+                    "builder",
+                    "land_area",
+                    ("is_secondary", "below_market", "red_book"),
+                    ("contact_name", "contact_phone"),
+                    "allow_media_download",
+                    "rejection_reason",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Системные поля",
+            {
+                "fields": [
+                    "views_count",
+                    "favourites_count",
+                    "bumped_at",
+                    "published_at",
+                    "expires_at",
+                    "promoted_until",
+                    "is_deleted",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+    ]
 
     def get_queryset(self, request):
         # В админке видны и мягко удалённые объявления.

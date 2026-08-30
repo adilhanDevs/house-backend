@@ -230,6 +230,15 @@ class Listing(TimeStampedModel):
 
     rooms = models.PositiveSmallIntegerField("Комнат", default=0)
     area = models.DecimalField("Площадь, м²", max_digits=8, decimal_places=2, blank=True, null=True)
+    living_room_area = models.DecimalField("Гостинная, м²", max_digits=6, decimal_places=2, blank=True, null=True)
+    hall_area = models.DecimalField("Холл, м²", max_digits=6, decimal_places=2, blank=True, null=True)
+    kitchen_area = models.DecimalField("Кухня, м²", max_digits=6, decimal_places=2, blank=True, null=True)
+    bedroom_area = models.DecimalField("Спальная, м²", max_digits=6, decimal_places=2, blank=True, null=True)
+    bedroom_2_area = models.DecimalField("Спальная 2, м²", max_digits=6, decimal_places=2, blank=True, null=True)
+    balcony_area = models.DecimalField("Балкон, м²", max_digits=6, decimal_places=2, blank=True, null=True)
+    bathroom_area = models.DecimalField("Сан.узел, м²", max_digits=6, decimal_places=2, blank=True, null=True)
+    furniture = models.CharField("Мебель", max_length=50, blank=True, default="Полностью")
+
     land_area = models.DecimalField(
         "Площадь участка, соток", max_digits=8, decimal_places=2, blank=True, null=True
     )
@@ -256,6 +265,10 @@ class Listing(TimeStampedModel):
     is_secondary = models.BooleanField("Вторичка", default=False)
     below_market = models.BooleanField("Ниже рынка", default=False)
     red_book = models.BooleanField("Красная книга", default=False)
+    has_direct_sale = models.BooleanField("Прямая покупка", default=True)
+    has_mortgage = models.BooleanField("Ипотека", default=True)
+
+    landmarks = models.JSONField("Ключевые места", default=list, blank=True)
 
     description = models.TextField("Описание", blank=True)
 
