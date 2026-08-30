@@ -18,6 +18,7 @@ from apps.catalog.models import (
     Listing,
     ListingMedia,
     ListingReport,
+    ListingRoom,
     ModerationTask,
     RejectReason,
 )
@@ -61,6 +62,14 @@ class BuilderAdmin(admin.ModelAdmin):
     list_filter = ["is_active"]
     search_fields = ["name", "slug"]
     ordering = ["order", "name"]
+
+
+class ListingRoomInline(admin.TabularInline):
+    model = ListingRoom
+    extra = 1
+    fields = ["name", "area", "order"]
+    verbose_name = "Комната (помещение)"
+    verbose_name_plural = "Комнаты (экспликация помещений)"
 
 
 class ListingMediaInline(admin.TabularInline):
@@ -136,16 +145,12 @@ class ListingAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Общая информация (квадратуры комнат)",
+            "Общая информация",
             {
                 "fields": [
                     "area",
                     "rooms",
                     ("floor", "floors"),
-                    ("living_room_area", "hall_area"),
-                    ("kitchen_area", "bathroom_area"),
-                    ("bedroom_area", "bedroom_2_area"),
-                    "balcony_area",
                     "furniture",
                 ]
             },
@@ -195,7 +200,7 @@ class ListingAdmin(admin.ModelAdmin):
         # В админке видны и мягко удалённые объявления.
         return Listing.all_objects.get_queryset().select_related("district", "city")
 
-    inlines = [ListingMediaInline]
+    inlines = [ListingRoomInline, ListingMediaInline]
     actions = ["publish", "reject", "archive"]
     date_hierarchy = "created_at"
 

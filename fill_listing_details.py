@@ -26,7 +26,7 @@ if "DJANGO_SETTINGS_MODULE" not in os.environ:
 else:
     django.setup()
 
-from apps.catalog.models import Listing
+from apps.catalog.models import Listing, ListingRoom
 
 
 def fill_listings():
@@ -135,12 +135,61 @@ def fill_listings():
                 l.balcony_area = Decimal(str(round(total_sqm * 0.06, 1)))
 
         l.save()
+
+        # 8. Создание комнат (экспликация)
+        if not l.rooms_data.exists():
+            if "асанбай" in district_name or "asanbay" in slug_lower:
+                rooms_def = [
+                    ("Гостинная", Decimal("42.0")),
+                    ("Холл", Decimal("20.0")),
+                    ("Кухня", Decimal("18.0")),
+                    ("Спальная", Decimal("24.0")),
+                    ("Спальная 2", Decimal("16.0")),
+                    ("Балкон", Decimal("8.0")),
+                    ("Сан.узел", Decimal("11.0")),
+                ]
+            elif "технопарк" in district_name or "technopark" in slug_lower:
+                rooms_def = [
+                    ("Гостинная", Decimal("35.0")),
+                    ("Холл", Decimal("23.0")),
+                    ("Кухня", Decimal("17.0")),
+                    ("Спальная", Decimal("25.0")),
+                    ("Спальная 2", Decimal("15.0")),
+                    ("Балкон", Decimal("7.0")),
+                    ("Сан.узел", Decimal("10.0")),
+                ]
+            elif "дом" in l.kind.lower() or "house" in slug_lower:
+                rooms_def = [
+                    ("Гостинная", Decimal("60.0")),
+                    ("Холл", Decimal("35.0")),
+                    ("Кухня", Decimal("28.0")),
+                    ("Спальная", Decimal("30.0")),
+                    ("Спальная 2", Decimal("25.0")),
+                    ("Гардеробная", Decimal("12.0")),
+                    ("Терраса", Decimal("18.0")),
+                    ("Сан.узел", Decimal("15.0")),
+                ]
+            else:
+                rooms_def = [
+                    ("Гостинная", Decimal("35.0")),
+                    ("Кухня", Decimal("17.0")),
+                    ("Спальная", Decimal("22.0")),
+                    ("Сан.узел", Decimal("8.0")),
+                ]
+            for order, (r_name, r_area) in enumerate(rooms_def, 1):
+                ListingRoom.objects.create(
+                    listing=l,
+                    name=r_name,
+                    area=r_area,
+                    order=order,
+                )
+
         updated_count += 1
         print(f"✅ Обновлено объявление [{l.slug}]:")
         print(f"   - Адрес: {l.address.replace(chr(10), ' ')}")
         print(f"   - Координаты: {l.latitude}, {l.longitude}")
         print(f"   - Ключевые места: {l.landmarks}")
-        print(f"   - Гостинная: {l.living_room_area}м², Холл: {l.hall_area}м², Кухня: {l.kitchen_area}м²")
+        print(f"   - Комнаты: {[f'{r.name}: {r.area}м²' for r in l.rooms_data.all()]}")
         print(f"   - Мебель: {l.furniture}, Покупка: Прямая={l.has_direct_sale}, Ипотека={l.has_mortgage}")
 
     print(f"\n🎉 Успешно обновлено {updated_count} объявлений!")

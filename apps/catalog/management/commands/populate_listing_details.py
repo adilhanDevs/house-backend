@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.core.management.base import BaseCommand
-from apps.catalog.models import Listing
+from apps.catalog.models import Listing, ListingRoom
 
 
 class Command(BaseCommand):
@@ -82,37 +82,58 @@ class Command(BaseCommand):
             l.has_direct_sale = True
             l.has_mortgage = True
 
-            # 7. Квадратуры комнат
-            total_sqm = float(l.area) if l.area else 92.0
-
-            if not l.living_room_area:
-                if "асанбай" in district_name or "asanbay" in slug_lower or total_sqm >= 110:
-                    l.living_room_area = Decimal("42.0")
-                    l.hall_area = Decimal("20.0")
-                    l.kitchen_area = Decimal("18.0")
-                    l.bedroom_area = Decimal("24.0")
-                    l.bedroom_2_area = Decimal("16.0")
-                    l.balcony_area = Decimal("8.0")
-                    l.bathroom_area = Decimal("11.0")
-                elif "технопарк" in district_name or "technopark" in slug_lower or (80 <= total_sqm < 110):
-                    l.living_room_area = Decimal("35.0")
-                    l.hall_area = Decimal("23.0")
-                    l.kitchen_area = Decimal("17.0")
-                    l.bedroom_area = Decimal("25.0")
-                    l.bedroom_2_area = Decimal("15.0")
-                    l.balcony_area = Decimal("7.0")
-                    l.bathroom_area = Decimal("10.0")
-                else:
-                    l.living_room_area = Decimal(str(round(total_sqm * 0.35, 1)))
-                    l.kitchen_area = Decimal(str(round(total_sqm * 0.18, 1)))
-                    l.hall_area = Decimal(str(round(total_sqm * 0.15, 1)))
-                    l.bedroom_area = Decimal(str(round(total_sqm * 0.22, 1)))
-                    l.bedroom_2_area = Decimal(str(round(total_sqm * 0.14, 1))) if total_sqm > 55 else None
-                    l.bathroom_area = Decimal(str(round(total_sqm * 0.08, 1)))
-                    l.balcony_area = Decimal(str(round(total_sqm * 0.06, 1)))
-
             l.save()
+
+            # 7. Создание комнат (экспликация)
+            if not l.rooms_data.exists():
+                if "асанбай" in district_name or "asanbay" in slug_lower:
+                    rooms_def = [
+                        ("Гостинная", Decimal("42.0")),
+                        ("Холл", Decimal("20.0")),
+                        ("Кухня", Decimal("18.0")),
+                        ("Спальная", Decimal("24.0")),
+                        ("Спальная 2", Decimal("16.0")),
+                        ("Балкон", Decimal("8.0")),
+                        ("Сан.узел", Decimal("11.0")),
+                    ]
+                elif "технопарк" in district_name or "technopark" in slug_lower:
+                    rooms_def = [
+                        ("Гостинная", Decimal("35.0")),
+                        ("Холл", Decimal("23.0")),
+                        ("Кухня", Decimal("17.0")),
+                        ("Спальная", Decimal("25.0")),
+                        ("Спальная 2", Decimal("15.0")),
+                        ("Балкон", Decimal("7.0")),
+                        ("Сан.узел", Decimal("10.0")),
+                    ]
+                elif "дом" in l.kind.lower() or "house" in slug_lower:
+                    rooms_def = [
+                        ("Гостинная", Decimal("60.0")),
+                        ("Холл", Decimal("35.0")),
+                        ("Кухня", Decimal("28.0")),
+                        ("Спальная", Decimal("30.0")),
+                        ("Спальная 2", Decimal("25.0")),
+                        ("Гардеробная", Decimal("12.0")),
+                        ("Терраса", Decimal("18.0")),
+                        ("Сан.узел", Decimal("15.0")),
+                    ]
+                else:
+                    rooms_def = [
+                        ("Гостинная", Decimal("35.0")),
+                        ("Кухня", Decimal("17.0")),
+                        ("Спальная", Decimal("22.0")),
+                        ("Сан.узел", Decimal("8.0")),
+                    ]
+                for order, (r_name, r_area) in enumerate(rooms_def, 1):
+                    ListingRoom.objects.create(
+                        listing=l,
+                        name=r_name,
+                        area=r_area,
+                        order=order,
+                    )
+
             updated_count += 1
-            self.stdout.write(f"Обновлено: [{l.slug}]")
+            self.stdout.write(f"Обновлено: [{l.slug}] ({l.rooms_data.count()} комнат)")
 
         self.stdout.write(self.style.SUCCESS(f"Успешно обновлено {updated_count} объявлений!"))
+

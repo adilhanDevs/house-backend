@@ -15,6 +15,7 @@ from apps.catalog.models import (
     Listing,
     ListingMedia,
     ListingReport,
+    ListingRoom,
     ModerationTask,
     RejectReason,
 )
@@ -331,12 +332,22 @@ class ListingReelsSerializer(ListingListSerializer):
         read_only_fields = fields
 
 
+class ListingRoomSerializer(serializers.ModelSerializer):
+    """Помещение / комната в объекте."""
+
+    class Meta:
+        model = ListingRoom
+        fields = ["id", "name", "area", "order"]
+        read_only_fields = fields
+
+
 class ListingDetailSerializer(ListingListSerializer):
     """Полная карточка объекта."""
 
     builder = BuilderBriefSerializer(read_only=True)
     media = ListingMediaSerializer(many=True, read_only=True)
     seller = serializers.SerializerMethodField()
+    rooms_breakdown = ListingRoomSerializer(source="rooms_data", many=True, read_only=True)
 
     class Meta(ListingListSerializer.Meta):
         fields = [
@@ -356,6 +367,7 @@ class ListingDetailSerializer(ListingListSerializer):
             "has_direct_sale",
             "has_mortgage",
             "landmarks",
+            "rooms_breakdown",
             "builder",
             "allow_media_download",
             "views_count",

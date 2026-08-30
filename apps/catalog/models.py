@@ -361,7 +361,34 @@ class Listing(TimeStampedModel):
         """На сколько процентов цена ниже прежней."""
         if self.price is None or not self.old_price or self.old_price <= self.price:
             return None
-        return round((self.old_price - self.price) / self.old_price * 100)
+class ListingRoom(models.Model):
+    """Комната или помещение в объявлении с указанием квадратуры."""
+
+    listing = models.ForeignKey(
+        Listing,
+        verbose_name="Объявление",
+        on_delete=models.CASCADE,
+        related_name="rooms_data",
+    )
+    name = models.CharField(
+        "Название комнаты",
+        max_length=100,
+        help_text="Например: Гостинная, Холл, Кухня, Спальная, Гардеробная, Терраса, Сан.узел",
+    )
+    area = models.DecimalField(
+        "Площадь, м²",
+        max_digits=6,
+        decimal_places=2,
+    )
+    order = models.PositiveIntegerField("Порядок", default=0)
+
+    class Meta:
+        verbose_name = "Комната"
+        verbose_name_plural = "Комнаты (экспликация помещений)"
+        ordering = ["order", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.name}: {self.area} м²"
 
 
 class ListingMedia(TimeStampedModel):
