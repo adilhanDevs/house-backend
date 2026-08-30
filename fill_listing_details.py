@@ -26,7 +26,9 @@ if "DJANGO_SETTINGS_MODULE" not in os.environ:
 else:
     django.setup()
 
-from apps.catalog.models import Listing, ListingRoom
+from apps.catalog.enums import MediaKind, MediaStatus
+from apps.catalog.models import Listing, ListingRoom, ListingMedia
+from django.core.files.base import ContentFile
 
 
 def fill_listings():
@@ -184,12 +186,46 @@ def fill_listings():
                     order=order,
                 )
 
+        # 9. Видеообзоры с названиями и превью
+        if l.media.filter(kind=MediaKind.VIDEO).count() < 3:
+            video_defs = [
+                ("Обзор квартиры", "video_1.mp4", "92b0d143df96c511.jpg"),
+                ("Обзор местности", "video_2.mp4", "b76192aa900c610a.jpg"),
+                ("Инфраструктура района", "video_3.mp4", "e267d094d7f9a8fc.jpg"),
+            ]
+            assets_video_dir = os.path.join(os.path.dirname(__file__), "..", "flutter_app", "assets", "videos_obzor")
+            assets_img_dir = os.path.join(os.path.dirname(__file__), "..", "flutter_app", "assets", "figma")
+            existing_count = l.media.filter(kind=MediaKind.VIDEO).count()
+            for v_idx in range(existing_count, 3):
+                v_title, v_file_name, v_thumb_name = video_defs[v_idx]
+                v_path = os.path.join(assets_video_dir, v_file_name)
+                t_path = os.path.join(assets_img_dir, v_thumb_name)
+                if os.path.exists(v_path):
+                    with open(v_path, "rb") as vf:
+                        v_content = vf.read()
+                    vm = ListingMedia(
+                        listing=l,
+                        kind=MediaKind.VIDEO,
+                        title=v_title,
+                        status=MediaStatus.READY,
+                        order=10 + v_idx,
+                    )
+                    vm.file.save(f"video_{l.id}_{v_idx}.mp4", ContentFile(v_content), save=False)
+                    if os.path.exists(t_path):
+                        with open(t_path, "rb") as tf:
+                            t_content = tf.read()
+                        vm.thumbnail.save(f"thumb_{l.id}_{v_idx}.jpg", ContentFile(t_content), save=False)
+                    vm.save()
+                    print(f"   🎥 Добавлено видео #{v_idx + 1}: {v_title}")
+
         updated_count += 1
         print(f"✅ Обновлено объявление [{l.slug}]:")
         print(f"   - Адрес: {l.address.replace(chr(10), ' ')}")
         print(f"   - Координаты: {l.latitude}, {l.longitude}")
         print(f"   - Ключевые места: {l.landmarks}")
         print(f"   - Комнаты: {[f'{r.name}: {r.area}м²' for r in l.rooms_data.all()]}")
+        videos_info = [f"{v.title or 'Видео'} (превью={bool(v.thumbnail)})" for v in l.media.filter(kind=MediaKind.VIDEO)]
+        print(f"   - Видео: {videos_info}")
         print(f"   - Мебель: {l.furniture}, Покупка: Прямая={l.has_direct_sale}, Ипотека={l.has_mortgage}")
 
     print(f"\n🎉 Успешно обновлено {updated_count} объявлений!")

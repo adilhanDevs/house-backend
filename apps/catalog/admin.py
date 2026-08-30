@@ -75,8 +75,8 @@ class ListingRoomInline(admin.TabularInline):
 class ListingMediaInline(admin.TabularInline):
     model = ListingMedia
     extra = 0
-    fields = ["file", "kind", "status", "order", "is_cover", "phash", "width", "height"]
-    readonly_fields = ["status", "phash", "width", "height"]
+    fields = ["file", "kind", "title", "thumbnail", "status", "order", "is_cover", "width", "height"]
+    readonly_fields = ["status", "width", "height"]
 
 
 @admin.register(ListingMedia)

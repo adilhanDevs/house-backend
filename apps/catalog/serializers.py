@@ -174,7 +174,19 @@ class ListingMediaSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.URLField(allow_null=True))
     def get_thumbnail_url(self, obj: ListingMedia) -> str | None:
-        return self._url(obj.thumbnail or obj.url_thumb)
+        if obj.thumbnail:
+            return self._url(obj.thumbnail)
+        if obj.url_thumb:
+            return self._url(obj.url_thumb)
+        if obj.kind == MediaKind.VIDEO and obj.file:
+            try:
+                from apps.catalog.tasks import _process_video
+                _process_video(obj)
+                if obj.thumbnail:
+                    return self._url(obj.thumbnail)
+            except Exception:
+                pass
+        return None
 
     @extend_schema_field(serializers.URLField(allow_null=True))
     def get_url_thumb(self, obj: ListingMedia) -> str | None:
@@ -348,6 +360,7 @@ class ListingDetailSerializer(ListingListSerializer):
     media = ListingMediaSerializer(many=True, read_only=True)
     seller = serializers.SerializerMethodField()
     rooms_breakdown = ListingRoomSerializer(source="rooms_data", many=True, read_only=True)
+    videos = serializers.SerializerMethodField()
 
     class Meta(ListingListSerializer.Meta):
         fields = [
@@ -368,6 +381,7 @@ class ListingDetailSerializer(ListingListSerializer):
             "has_mortgage",
             "landmarks",
             "rooms_breakdown",
+            "videos",
             "builder",
             "allow_media_download",
             "views_count",
@@ -376,6 +390,11 @@ class ListingDetailSerializer(ListingListSerializer):
             "seller",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(ListingMediaSerializer(many=True))
+    def get_videos(self, obj: Listing) -> list[dict[str, Any]]:
+        video_items = [m for m in obj.media.all() if m.kind == MediaKind.VIDEO]
+        return ListingMediaSerializer(video_items, many=True, context=self.context).data
 
     @extend_schema_field(SellerSerializer)
     def get_seller(self, obj: Listing) -> dict[str, Any]:

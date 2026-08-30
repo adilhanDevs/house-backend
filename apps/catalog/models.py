@@ -4,8 +4,11 @@
 чтобы клиент мог переключиться с моковых данных на API без изменений в UI.
 """
 
+import logging
 import uuid
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
@@ -472,6 +475,15 @@ class ListingMedia(TimeStampedModel):
     @property
     def is_ready(self) -> bool:
         return self.status == MediaStatus.READY
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        super().save(*args, **kwargs)
+        if self.kind == MediaKind.VIDEO and not self.thumbnail and self.file:
+            try:
+                from apps.catalog.tasks import _process_video
+                _process_video(self)
+            except Exception as e:
+                logger.warning("Не удалось автоматически извлечь кадр-обложку видео: %s", e)
 
     def display_file(self) -> Any:
         """Что показывать клиенту сейчас.
