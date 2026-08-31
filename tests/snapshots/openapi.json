@@ -160,6 +160,15 @@
         ],
         "type": "object"
       },
+      "BuildingLineEnum": {
+        "description": "* `first` - Первая линия\n* `second` - Вторая линия\n* `inside` - Внутри квартала",
+        "enum": [
+          "first",
+          "second",
+          "inside"
+        ],
+        "type": "string"
+      },
       "ChoiceOption": {
         "properties": {
           "label": {
@@ -267,6 +276,29 @@
           "title"
         ],
         "type": "object"
+      },
+      "CommercialPurposeEnum": {
+        "description": "* `office` - Офис\n* `shop` - Магазин\n* `warehouse` - Склад\n* `production` - Производство\n* `catering` - Общепит\n* `free` - Свободного назначения",
+        "enum": [
+          "office",
+          "shop",
+          "warehouse",
+          "production",
+          "catering",
+          "free"
+        ],
+        "type": "string"
+      },
+      "ConditionEnum": {
+        "description": "* `euro` - Евроремонт\n* `good` - Хорошее состояние\n* `shell` - Под самоотделку\n* `medium` - Среднее состояние\n* `none` - Без ремонта",
+        "enum": [
+          "euro",
+          "good",
+          "shell",
+          "medium",
+          "none"
+        ],
+        "type": "string"
       },
       "ConsentRequestRequest": {
         "description": "Согласие, данное уже после регистрации (реклама, аналитика).",
@@ -713,9 +745,27 @@
             },
             "type": "array"
           },
+          "building_lines": {
+            "items": {
+              "$ref": "#/components/schemas/ChoiceOption"
+            },
+            "type": "array"
+          },
+          "commercial_purposes": {
+            "items": {
+              "$ref": "#/components/schemas/ChoiceOption"
+            },
+            "type": "array"
+          },
           "districts": {
             "items": {
               "$ref": "#/components/schemas/District"
+            },
+            "type": "array"
+          },
+          "plot_purposes": {
+            "items": {
+              "$ref": "#/components/schemas/ChoiceOption"
             },
             "type": "array"
           },
@@ -749,7 +799,10 @@
         },
         "required": [
           "area_ranges",
+          "building_lines",
+          "commercial_purposes",
           "districts",
+          "plot_purposes",
           "price_range",
           "property_kinds",
           "rooms",
@@ -757,6 +810,15 @@
           "series"
         ],
         "type": "object"
+      },
+      "FurnitureEnum": {
+        "description": "* `full` - Полностью меблирована\n* `partial` - Частично с мебелью\n* `none` - Без мебели",
+        "enum": [
+          "full",
+          "partial",
+          "none"
+        ],
+        "type": "string"
       },
       "Health": {
         "description": "Ответ health-check.",
@@ -783,6 +845,16 @@
         "enum": [
           "ok",
           "error"
+        ],
+        "type": "string"
+      },
+      "HeatingEnum": {
+        "description": "* `central` - Центральное\n* `gas` - Газовое\n* `electric` - Электрическое\n* `autonomous` - Автономное",
+        "enum": [
+          "central",
+          "gas",
+          "electric",
+          "autonomous"
         ],
         "type": "string"
       },
@@ -1091,6 +1163,41 @@
             ],
             "readOnly": true
           },
+          "building_line": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BuildingLineEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Линия"
+          },
+          "ceiling_height": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,2}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Высота потолков, м",
+            "type": "string"
+          },
+          "commercial_purpose": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialPurposeEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Назначение помещения"
+          },
+          "condition": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConditionEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Состояние и ремонт"
+          },
           "cover_url": {
             "format": "uri",
             "nullable": true,
@@ -1119,6 +1226,11 @@
             ],
             "readOnly": true
           },
+          "exchange_possible": {
+            "readOnly": true,
+            "title": "Возможен обмен",
+            "type": "boolean"
+          },
           "favourites_count": {
             "readOnly": true,
             "title": "В избранном",
@@ -1135,9 +1247,13 @@
             "type": "integer"
           },
           "furniture": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureEnum"
+              }
+            ],
             "readOnly": true,
-            "title": "Мебель",
-            "type": "string"
+            "title": "Мебель"
           },
           "hall_area": {
             "format": "decimal",
@@ -1152,10 +1268,29 @@
             "title": "Прямая покупка",
             "type": "boolean"
           },
+          "has_gas": {
+            "readOnly": true,
+            "title": "Наличие газа",
+            "type": "boolean"
+          },
           "has_mortgage": {
             "readOnly": true,
             "title": "Ипотека",
             "type": "boolean"
+          },
+          "has_separate_entrance": {
+            "readOnly": true,
+            "title": "Отдельный вход",
+            "type": "boolean"
+          },
+          "heating": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HeatingEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Отопление"
           },
           "is_available": {
             "readOnly": true,
@@ -1193,6 +1328,14 @@
             "pattern": "^-?\\d{0,4}(?:\\.\\d{0,2})?$",
             "readOnly": true,
             "title": "Кухня, м²",
+            "type": "string"
+          },
+          "land_area": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,6}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Площадь участка, соток",
             "type": "string"
           },
           "landmarks": {
@@ -1242,6 +1385,15 @@
           "photos_count": {
             "readOnly": true,
             "type": "integer"
+          },
+          "plot_purpose": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlotPurposeEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Назначение участка"
           },
           "price": {
             "format": "decimal",
@@ -1325,17 +1477,25 @@
           "bedroom_area",
           "below_market",
           "builder",
+          "building_line",
+          "ceiling_height",
+          "commercial_purpose",
+          "condition",
           "cover_url",
           "currency",
           "description",
           "district",
+          "exchange_possible",
           "favourites_count",
           "floor",
           "floors",
           "furniture",
           "hall_area",
           "has_direct_sale",
+          "has_gas",
           "has_mortgage",
+          "has_separate_entrance",
+          "heating",
           "is_available",
           "is_favourite",
           "is_promoted",
@@ -1343,6 +1503,7 @@
           "kind",
           "kind_label",
           "kitchen_area",
+          "land_area",
           "landmarks",
           "latitude",
           "living_room_area",
@@ -1350,6 +1511,7 @@
           "media",
           "old_price",
           "photos_count",
+          "plot_purpose",
           "price",
           "published_at",
           "red_book",
@@ -1430,6 +1592,32 @@
             ],
             "readOnly": true
           },
+          "building_line": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BuildingLineEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Линия"
+          },
+          "ceiling_height": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,2}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Высота потолков, м",
+            "type": "string"
+          },
+          "commercial_purpose": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialPurposeEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Назначение помещения"
+          },
           "completeness": {
             "allOf": [
               {
@@ -1437,6 +1625,15 @@
               }
             ],
             "readOnly": true
+          },
+          "condition": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConditionEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Состояние и ремонт"
           },
           "cover_url": {
             "format": "uri",
@@ -1466,6 +1663,11 @@
             ],
             "readOnly": true
           },
+          "exchange_possible": {
+            "readOnly": true,
+            "title": "Возможен обмен",
+            "type": "boolean"
+          },
           "favourites_count": {
             "readOnly": true,
             "title": "В избранном",
@@ -1482,9 +1684,13 @@
             "type": "integer"
           },
           "furniture": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureEnum"
+              }
+            ],
             "readOnly": true,
-            "title": "Мебель",
-            "type": "string"
+            "title": "Мебель"
           },
           "hall_area": {
             "format": "decimal",
@@ -1499,10 +1705,29 @@
             "title": "Прямая покупка",
             "type": "boolean"
           },
+          "has_gas": {
+            "readOnly": true,
+            "title": "Наличие газа",
+            "type": "boolean"
+          },
           "has_mortgage": {
             "readOnly": true,
             "title": "Ипотека",
             "type": "boolean"
+          },
+          "has_separate_entrance": {
+            "readOnly": true,
+            "title": "Отдельный вход",
+            "type": "boolean"
+          },
+          "heating": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HeatingEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Отопление"
           },
           "is_available": {
             "readOnly": true,
@@ -1540,6 +1765,14 @@
             "pattern": "^-?\\d{0,4}(?:\\.\\d{0,2})?$",
             "readOnly": true,
             "title": "Кухня, м²",
+            "type": "string"
+          },
+          "land_area": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,6}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Площадь участка, соток",
             "type": "string"
           },
           "landmarks": {
@@ -1589,6 +1822,15 @@
           "photos_count": {
             "readOnly": true,
             "type": "integer"
+          },
+          "plot_purpose": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlotPurposeEnum"
+              }
+            ],
+            "readOnly": true,
+            "title": "Назначение участка"
           },
           "price": {
             "format": "decimal",
@@ -1681,18 +1923,26 @@
           "bedroom_area",
           "below_market",
           "builder",
+          "building_line",
+          "ceiling_height",
+          "commercial_purpose",
           "completeness",
+          "condition",
           "cover_url",
           "currency",
           "description",
           "district",
+          "exchange_possible",
           "favourites_count",
           "floor",
           "floors",
           "furniture",
           "hall_area",
           "has_direct_sale",
+          "has_gas",
           "has_mortgage",
+          "has_separate_entrance",
+          "heating",
           "is_available",
           "is_favourite",
           "is_promoted",
@@ -1700,6 +1950,7 @@
           "kind",
           "kind_label",
           "kitchen_area",
+          "land_area",
           "landmarks",
           "latitude",
           "living_room_area",
@@ -1707,6 +1958,7 @@
           "media",
           "old_price",
           "photos_count",
+          "plot_purpose",
           "price",
           "published_at",
           "red_book",
@@ -1801,6 +2053,14 @@
             "readOnly": true,
             "type": "string"
           },
+          "land_area": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,6}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Площадь участка, соток",
+            "type": "string"
+          },
           "old_price": {
             "description": "Зачёркнутая цена в карточке.",
             "format": "decimal",
@@ -1873,6 +2133,7 @@
           "is_secondary",
           "kind",
           "kind_label",
+          "land_area",
           "old_price",
           "photos_count",
           "price",
@@ -2114,6 +2375,14 @@
             "readOnly": true,
             "type": "string"
           },
+          "land_area": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,6}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Площадь участка, соток",
+            "type": "string"
+          },
           "old_price": {
             "description": "Зачёркнутая цена в карточке.",
             "format": "decimal",
@@ -2193,6 +2462,7 @@
           "is_secondary",
           "kind",
           "kind_label",
+          "land_area",
           "old_price",
           "photos_count",
           "price",
@@ -2393,10 +2663,50 @@
             "title": "Слаг",
             "type": "string"
           },
+          "building_line": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BuildingLineEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Линия"
+          },
+          "ceiling_height": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,2}(?:\\.\\d{0,2})?$",
+            "title": "Высота потолков, м",
+            "type": "string"
+          },
           "city": {
             "nullable": true,
             "title": "Слаг",
             "type": "string"
+          },
+          "commercial_purpose": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CommercialPurposeEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Назначение помещения"
+          },
+          "condition": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConditionEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Состояние и ремонт"
           },
           "contact_name": {
             "maxLength": 150,
@@ -2425,6 +2735,10 @@
             "title": "Слаг",
             "type": "string"
           },
+          "exchange_possible": {
+            "title": "Возможен обмен",
+            "type": "boolean"
+          },
           "floor": {
             "format": "int64",
             "maximum": 9223372036854775807,
@@ -2440,9 +2754,15 @@
             "type": "integer"
           },
           "furniture": {
-            "maxLength": 50,
-            "title": "Мебель",
-            "type": "string"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Мебель"
           },
           "hall_area": {
             "format": "decimal",
@@ -2455,9 +2775,28 @@
             "title": "Прямая покупка",
             "type": "boolean"
           },
+          "has_gas": {
+            "title": "Наличие газа",
+            "type": "boolean"
+          },
           "has_mortgage": {
             "title": "Ипотека",
             "type": "boolean"
+          },
+          "has_separate_entrance": {
+            "title": "Отдельный вход",
+            "type": "boolean"
+          },
+          "heating": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HeatingEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Отопление"
           },
           "is_secondary": {
             "title": "Вторичка",
@@ -2508,6 +2847,17 @@
             "pattern": "^-?\\d{0,3}(?:\\.\\d{0,6})?$",
             "title": "Долгота",
             "type": "string"
+          },
+          "plot_purpose": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PlotPurposeEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Назначение участка"
           },
           "price": {
             "format": "decimal",
@@ -2970,6 +3320,14 @@
             "readOnly": true,
             "type": "string"
           },
+          "land_area": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,6}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Площадь участка, соток",
+            "type": "string"
+          },
           "old_price": {
             "description": "Зачёркнутая цена в карточке.",
             "format": "decimal",
@@ -3071,6 +3429,7 @@
           "is_secondary",
           "kind",
           "kind_label",
+          "land_area",
           "old_price",
           "photos_count",
           "price",
@@ -3661,11 +4020,51 @@
             "title": "Слаг",
             "type": "string"
           },
+          "building_line": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BuildingLineEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Линия"
+          },
+          "ceiling_height": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,2}(?:\\.\\d{0,2})?$",
+            "title": "Высота потолков, м",
+            "type": "string"
+          },
           "city": {
             "minLength": 1,
             "nullable": true,
             "title": "Слаг",
             "type": "string"
+          },
+          "commercial_purpose": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CommercialPurposeEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Назначение помещения"
+          },
+          "condition": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConditionEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Состояние и ремонт"
           },
           "contact_name": {
             "maxLength": 150,
@@ -3695,6 +4094,10 @@
             "title": "Слаг",
             "type": "string"
           },
+          "exchange_possible": {
+            "title": "Возможен обмен",
+            "type": "boolean"
+          },
           "floor": {
             "format": "int64",
             "maximum": 9223372036854775807,
@@ -3710,9 +4113,15 @@
             "type": "integer"
           },
           "furniture": {
-            "maxLength": 50,
-            "title": "Мебель",
-            "type": "string"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Мебель"
           },
           "hall_area": {
             "format": "decimal",
@@ -3725,9 +4134,28 @@
             "title": "Прямая покупка",
             "type": "boolean"
           },
+          "has_gas": {
+            "title": "Наличие газа",
+            "type": "boolean"
+          },
           "has_mortgage": {
             "title": "Ипотека",
             "type": "boolean"
+          },
+          "has_separate_entrance": {
+            "title": "Отдельный вход",
+            "type": "boolean"
+          },
+          "heating": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HeatingEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Отопление"
           },
           "is_secondary": {
             "title": "Вторичка",
@@ -3778,6 +4206,17 @@
             "pattern": "^-?\\d{0,3}(?:\\.\\d{0,6})?$",
             "title": "Долгота",
             "type": "string"
+          },
+          "plot_purpose": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PlotPurposeEnum"
+              },
+              {
+                "$ref": "#/components/schemas/BlankEnum"
+              }
+            ],
+            "title": "Назначение участка"
           },
           "price": {
             "format": "decimal",
@@ -3996,6 +4435,16 @@
           "status"
         ],
         "type": "object"
+      },
+      "PlotPurposeEnum": {
+        "description": "* `ihs` - ИЖС\n* `garden` - Садовый\n* `agricultural` - Сельхозназначение\n* `commercial` - Коммерческий",
+        "enum": [
+          "ihs",
+          "garden",
+          "agricultural",
+          "commercial"
+        ],
+        "type": "string"
       },
       "PriceRange": {
         "properties": {
@@ -5774,6 +6223,14 @@
             "readOnly": true,
             "type": "string"
           },
+          "land_area": {
+            "format": "decimal",
+            "nullable": true,
+            "pattern": "^-?\\d{0,6}(?:\\.\\d{0,2})?$",
+            "readOnly": true,
+            "title": "Площадь участка, соток",
+            "type": "string"
+          },
           "old_price": {
             "description": "Зачёркнутая цена в карточке.",
             "format": "decimal",
@@ -5851,6 +6308,7 @@
           "is_secondary",
           "kind",
           "kind_label",
+          "land_area",
           "old_price",
           "photos_count",
           "price",
@@ -6915,12 +7373,38 @@
             }
           },
           {
+            "description": "Несколько значений могут быть разделены запятыми.",
+            "explode": false,
+            "in": "query",
+            "name": "building_line",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          },
+          {
             "description": "Город",
             "in": "query",
             "name": "city",
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Несколько значений могут быть разделены запятыми.",
+            "explode": false,
+            "in": "query",
+            "name": "commercial_purpose",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
           },
           {
             "description": "Валюта, в которой заданы price_min/price_max\n\n* `USD` - USD\n* `KGS` - KGS",
@@ -6969,6 +7453,14 @@
             "name": "floor_min",
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "description": "Отдельный вход",
+            "in": "query",
+            "name": "has_separate_entrance",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -7031,6 +7523,19 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "description": "Несколько значений могут быть разделены запятыми.",
+            "explode": false,
+            "in": "query",
+            "name": "plot_purpose",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
           },
           {
             "description": "Цена до",
@@ -7176,9 +7681,25 @@
             }
           },
           {
+            "description": "Линия",
+            "in": "query",
+            "name": "building_line",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Город",
             "in": "query",
             "name": "city",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Назначение помещения",
+            "in": "query",
+            "name": "commercial_purpose",
             "schema": {
               "type": "string"
             }
@@ -7211,6 +7732,14 @@
             "description": "Этаж от",
             "in": "query",
             "name": "floor_min",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Отдельный вход",
+            "in": "query",
+            "name": "has_separate_entrance",
             "schema": {
               "type": "string"
             }
@@ -7251,6 +7780,14 @@
             "description": "Не последний этаж",
             "in": "query",
             "name": "not_last_floor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Назначение участка",
+            "in": "query",
+            "name": "plot_purpose",
             "schema": {
               "type": "string"
             }
@@ -10050,12 +10587,38 @@
             }
           },
           {
+            "description": "Несколько значений могут быть разделены запятыми.",
+            "explode": false,
+            "in": "query",
+            "name": "building_line",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          },
+          {
             "description": "Город",
             "in": "query",
             "name": "city",
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Несколько значений могут быть разделены запятыми.",
+            "explode": false,
+            "in": "query",
+            "name": "commercial_purpose",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
           },
           {
             "description": "Валюта, в которой заданы price_min/price_max\n\n* `USD` - USD\n* `KGS` - KGS",
@@ -10104,6 +10667,14 @@
             "name": "floor_min",
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "description": "Отдельный вход",
+            "in": "query",
+            "name": "has_separate_entrance",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -10159,6 +10730,19 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "description": "Несколько значений могут быть разделены запятыми.",
+            "explode": false,
+            "in": "query",
+            "name": "plot_purpose",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
           },
           {
             "description": "Цена до",

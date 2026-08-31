@@ -154,7 +154,25 @@ class ListingAdmin(admin.ModelAdmin):
                     "rooms",
                     ("floor", "floors"),
                     "furniture",
+                    ("condition", "heating"),
+                    ("has_gas", "exchange_possible"),
                 ]
+            },
+        ),
+        (
+            "Параметры участка и коммерции",
+            {
+                "fields": [
+                    "plot_purpose",
+                    "commercial_purpose",
+                    ("has_separate_entrance", "building_line"),
+                    "ceiling_height",
+                ],
+                "description": (
+                    "Заполняется только для соответствующего типа объекта — "
+                    "см. apps/catalog/field_rules.py."
+                ),
+                "classes": ["collapse"],
             },
         ),
         (
