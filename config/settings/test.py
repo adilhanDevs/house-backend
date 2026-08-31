@@ -20,6 +20,10 @@ DEBUG = False
 SECRET_KEY = "test-secret-key-not-for-production"
 SIMPLE_JWT = {**SIMPLE_JWT, "SIGNING_KEY": SECRET_KEY}
 
+DATABASES = {
+    "default": env.db("DATABASE_URL"),
+}
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",

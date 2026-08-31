@@ -122,7 +122,14 @@ TEMPLATES = [
 # База данных
 # ----------------------------------------------------------------------------
 DATABASES = {
-    "default": env.db("DATABASE_URL"),
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'quantum_db',
+        'USER': 'quantum_user',
+        'PASSWORD': 'Adil2008!',
+        'HOST': 'localhost',
+        'PORT': '', # Оставьте пустым, по умолчанию используется 5432
+    }
 }
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("DATABASE_CONN_MAX_AGE", default=60)
