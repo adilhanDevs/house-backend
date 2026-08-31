@@ -1,7 +1,9 @@
 """Админка каталога: справочники, объявления и очередь модерации."""
 
 import json
+from datetime import timedelta
 
+from django.conf import settings
 from django.contrib import admin, messages
 from django.db.models import Prefetch, QuerySet
 from django.http import HttpRequest
@@ -206,9 +208,13 @@ class ListingAdmin(admin.ModelAdmin):
 
     @admin.action(description="Опубликовать")
     def publish(self, request: HttpRequest, queryset: QuerySet[Listing]) -> None:
+        # Срок жизни проставляем как и publish_listing(): без expires_at
+        # объявление не попадает под автоархивацию и висит в эфире вечно.
+        now = timezone.now()
         updated = queryset.update(
             status=ListingStatus.ACTIVE,
-            published_at=timezone.now(),
+            published_at=now,
+            expires_at=now + timedelta(days=settings.LISTING_ACTIVE_DAYS),
             rejection_reason="",
         )
         # Поисковый индекс пересчитываем одним запросом на всю пачку.

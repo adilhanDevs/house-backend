@@ -45,7 +45,7 @@ from apps.catalog.enums import (
     PropertyKind,
     SellerKind,
 )
-from apps.catalog.models import City, District, HouseSeries, Listing, ListingMedia
+from apps.catalog.models import Builder, City, District, HouseSeries, Listing, ListingMedia
 from apps.catalog.stats import bump_stat
 from apps.common.audit import audit
 from apps.common.cache import safe_cache_call
@@ -128,6 +128,7 @@ def _price_range(city: City | None) -> dict[str, Any]:
 def build_filter_options(city: City | None) -> dict[str, Any]:
     """Собирает ответ экрана фильтра."""
     series = HouseSeries.objects.filter(is_active=True).order_by("order", "code")
+    builders = Builder.objects.filter(is_active=True).order_by("order", "name")
 
     return {
         "property_kinds": _choices_payload(PropertyKind.choices),
@@ -137,6 +138,7 @@ def build_filter_options(city: City | None) -> dict[str, Any]:
             {"from": start, "to": end, "label": f"{start}-{end}"} for start, end in AREA_RANGES
         ],
         "series": [{"code": item.code, "name": item.name} for item in series],
+        "builders": [{"slug": item.slug, "name": item.name} for item in builders],
         "districts": _districts_payload(city),
         "price_range": _price_range(city),
     }
