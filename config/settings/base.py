@@ -290,7 +290,7 @@ TOPUP_BONUS_RATE = env.float("TOPUP_BONUS_RATE", default=0.10)
 # Сколько минут счёт ждёт оплаты.
 PAYMENT_EXPIRY_MINUTES = env.int("PAYMENT_EXPIRY_MINUTES", default=30)
 # Границы суммы пополнения, сом.
-PAYMENT_MIN_AMOUNT = env.int("PAYMENT_MIN_AMOUNT", default=100)
+PAYMENT_MIN_AMOUNT = env.int("PAYMENT_MIN_AMOUNT", default=1)
 PAYMENT_MAX_AMOUNT = env.int("PAYMENT_MAX_AMOUNT", default=500_000)
 # Сколько живёт ключ идемпотентности пополнения.
 PAYMENT_IDEMPOTENCY_TTL_HOURS = env.int("PAYMENT_IDEMPOTENCY_TTL_HOURS", default=24)
