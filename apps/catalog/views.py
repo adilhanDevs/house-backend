@@ -32,6 +32,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.catalog.covers import COVER_ATTR, cover_candidates
 from apps.catalog.enums import ListingStatus, ModerationStatus
 from apps.catalog.filters import ListingFilterSet
 from apps.catalog.models import (
@@ -811,6 +812,12 @@ class ListingMediaUploadView(ListingOwnerActionView):
             form.validated_data["kind"],
             title=form.validated_data.get("title", ""),
             description=form.validated_data.get("description", ""),
+            # Кадр-обложка и метаданные ролика приходят с клиента: сервер
+            # видео больше не разбирает.
+            thumbnail=form.validated_data.get("thumbnail"),
+            duration_seconds=form.validated_data.get("duration_seconds"),
+            width=form.validated_data.get("width"),
+            height=form.validated_data.get("height"),
         )
         payload = MediaUploadResultSerializer(result, context={"request": request}).data
         return Response(payload, status=status.HTTP_201_CREATED)
@@ -955,8 +962,6 @@ class ListingReportView(APIView):
 
 def moderation_queryset() -> QuerySet[ModerationTask]:
     """Очередь со всем, что нужно карточке задачи, без N+1."""
-    cover_media = ListingMedia.objects.filter(is_cover=True)
-
     return ModerationTask.objects.select_related(
         "review",
         "listing",
@@ -969,7 +974,7 @@ def moderation_queryset() -> QuerySet[ModerationTask]:
         "assigned_to",
     ).prefetch_related(
         "listing__media",
-        Prefetch("listing__media", queryset=cover_media, to_attr="cover_media"),
+        Prefetch("listing__media", queryset=cover_candidates(), to_attr=COVER_ATTR),
     )
 
 

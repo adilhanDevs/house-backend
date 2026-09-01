@@ -37,6 +37,7 @@ from django.utils import timezone
 from rest_framework.exceptions import Throttled
 
 from apps.catalog.constants import MAX_PHOTOS_PER_LISTING, MAX_VIDEOS_PER_LISTING
+from apps.catalog.covers import COVER_ATTR, cover_candidates
 from apps.catalog.enums import (
     BuildingLine,
     CommercialPurpose,
@@ -75,6 +76,9 @@ SUPPORTED_LANGUAGES = ("ru", "ky", "en")
 DEFAULT_LANGUAGE = "ru"
 
 # Чипы «Комнаты» и «Квадратура» из макета (lib/data/listings.dart, kAreaRanges).
+# Кадр-обложка ролика: больше 1080 по длинной стороне карточке не нужно.
+VIDEO_POSTER_MAX_SIDE = 1080
+
 ROOM_OPTIONS = [1, 2, 3, 4, 5]
 AREA_RANGES = [(35, 45), (45, 55), (65, 75), (75, 85)]
 
@@ -290,6 +294,10 @@ def upload_listing_media(
     kind: str,
     title: str = "",
     description: str = "",
+    thumbnail: Any = None,
+    duration_seconds: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> dict[str, Any]:
     """Принимает пачку файлов — пользователь выбирает их в галерее скопом.
 
@@ -315,7 +323,21 @@ def upload_listing_media(
             continue
 
         try:
-            accepted.append(_store_upload(listing, upload, kind, title, description))
+            accepted.append(
+                _store_upload(
+                    listing,
+                    upload,
+                    kind,
+                    title,
+                    description,
+                    # Обложка и метаданные относятся к одному ролику: сериализатор
+                    # не пропустит их вместе с пачкой файлов.
+                    thumbnail=thumbnail,
+                    duration_seconds=duration_seconds,
+                    width=width,
+                    height=height,
+                )
+            )
         except DjangoValidationError as exc:
             message = "; ".join(exc.messages)
             reason = reason or message
@@ -354,20 +376,23 @@ def _store_upload(
     kind: str,
     title: str = "",
     description: str = "",
+    thumbnail: Any = None,
+    duration_seconds: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> ListingMedia:
-    """Проверяет один файл и кладёт его в хранилище со статусом `processing`.
+    """Проверяет один файл и кладёт его в хранилище.
 
     Проверка идёт по содержимому файла до записи в бакет: 200-мегабайтное
     видео на четыре минуты не должно попасть в хранилище даже на секунду.
+
+    Видео сервер не разбирает: длительность, размеры и кадр-обложку присылает
+    приложение — оно и так открывает ролик в плеере. Раньше ради этого прямо в
+    запросе писалась временная копия файла и запускались ffprobe и ffmpeg.
     """
     from django.db import transaction
 
-    from apps.catalog.media import (
-        source_extension,
-        temporary_bytes,
-        validate_photo,
-        validate_video,
-    )
+    from apps.catalog.media import source_extension, validate_photo, validate_video
     from apps.catalog.tasks import process_media
 
     data = upload.read()
@@ -380,22 +405,24 @@ def _store_upload(
     }
 
     if kind == MediaKind.PHOTO:
-        width, height = validate_photo(data)
-        extra |= {"width": width, "height": height}
+        photo_width, photo_height = validate_photo(data)
+        extra |= {"width": photo_width, "height": photo_height}
     else:
-        # ffprobe работает с путём, поэтому валидируем по временной копии,
-        # а не по файлу в хранилище — в бакет он ещё не попал.
-        source = temporary_bytes(data, suffix=".mp4")
-        try:
-            probe = validate_video(data, str(source))
-        finally:
-            source.unlink(missing_ok=True)
+        probe = validate_video(data, duration_seconds=duration_seconds)
         extra |= {key: value for key, value in probe.items() if value is not None}
+        # Разрешение с клиента — справочное: оно нужно карточке, чтобы не
+        # прыгала вёрстка, и ни на что важное не влияет.
+        if width:
+            extra.setdefault("width", int(width))
+        if height:
+            extra.setdefault("height", int(height))
 
     media = ListingMedia(
         listing=listing,
         kind=kind,
-        status=MediaStatus.PROCESSING,
+        # Фото ещё ждёт вариантов размеров, видео уже готово: над ним на
+        # сервере работы не осталось.
+        status=MediaStatus.PROCESSING if kind == MediaKind.PHOTO else MediaStatus.READY,
         order=_next_media_order(listing),
         is_cover=(kind == MediaKind.PHOTO and not listing.media.filter(is_cover=True).exists()),
         **extra,
@@ -403,10 +430,46 @@ def _store_upload(
     # Имя файла с телефона отбрасывается: оно может содержать ПДн, а попадёт
     # в публичный URL. Ключ собирается из UUID объявления и записи.
     media.file.save(f"{media.uuid}_source.{source_extension(data, kind)}", upload, save=False)
+
+    if kind == MediaKind.VIDEO and thumbnail is not None:
+        _store_video_poster(media, thumbnail)
+
     media.save()
 
-    transaction.on_commit(lambda: process_media.delay(media.pk))
+    if kind == MediaKind.PHOTO:
+        transaction.on_commit(lambda: process_media.delay(media.pk))
     return media
+
+
+def _store_video_poster(media: ListingMedia, thumbnail: Any) -> None:
+    """Кладёт присланный клиентом кадр как обложку ролика.
+
+    Картинка проходит ту же проверку, что и обычное фото, и пересобирается
+    заново: приложению верим на слово только в том, что это кадр из его же
+    видео, а не в том, что внутри действительно JPEG без лишних метаданных.
+
+    Обложки нет — не беда: сериализатор отдаст первое фото объявления.
+    """
+    from io import BytesIO
+
+    from django.core.files.base import ContentFile
+    from PIL import Image
+
+    from apps.catalog.media import encode, resize_to, strip_exif, validate_photo, variant_name
+
+    data = thumbnail.read()
+    thumbnail.seek(0)
+    validate_photo(data)
+
+    with Image.open(BytesIO(data)) as raw:
+        poster = resize_to(strip_exif(raw), VIDEO_POSTER_MAX_SIDE)
+        payload = encode(poster, "JPEG")
+
+    media.thumbnail.save(
+        variant_name(media, "poster", "jpg"),
+        ContentFile(payload),
+        save=False,
+    )
 
 
 def _next_media_order(listing: Listing) -> int:
@@ -565,14 +628,13 @@ def listing_queryset(user: Any = None, only_active: bool = True) -> QuerySet[Lis
     `only_active=False` нужен избранному и истории просмотров: объявление могло
     уйти в архив, но из списка пользователя исчезать не должно.
     """
-    cover_media = ListingMedia.objects.filter(is_cover=True)
     base = Listing.objects.all()
     if only_active:
         base = base.filter(status=ListingStatus.ACTIVE)
 
     return (
         base.select_related("district", "city", "series", "builder", "owner")
-        .prefetch_related(Prefetch("media", queryset=cover_media, to_attr="cover_media"))
+        .prefetch_related(Prefetch("media", queryset=cover_candidates(), to_attr=COVER_ATTR))
         .annotate(
             promoted_rank=promoted_annotation(),
             priority_rank=priority_annotation(),
