@@ -1,20 +1,19 @@
-"""Пять настоящих объявлений: живые тексты, реальные фото и видеообзоры.
+"""Пять настоящих объявлений: живые тексты, адреса и характеристики.
 
 Отличие от `seed_demo`: тот рисует картинки-заглушки на лету и наполняет базу
 десятками случайных объектов. Здесь — ровно пять объявлений, которые не стыдно
-показать: осмысленные описания, адреса и характеристики, настоящие фотографии
-и настоящее видео к каждому.
+показать: осмысленные описания, адреса и характеристики.
 
-Медиа берутся из ассетов Flutter-прототипа (`flutter_app/assets`) — это те же
-файлы, что показывает приложение. Каталог задаётся флагом `--assets`, если
-бэкенд развёрнут отдельно от клиента:
+По умолчанию создаёт объявления без фото и видео.
+Если требуется прикрепить медиафайлы из ассетов, используйте флаг `--with-media`:
 
     python manage.py seed_real
-    python manage.py seed_real --assets /srv/house_kgz/flutter_app/assets
-    python manage.py seed_real --replace-media
+    python manage.py seed_real --with-media
+    python manage.py seed_real --with-media --assets /srv/house_kgz/flutter_app/assets
+    python manage.py seed_real --with-media --replace-media
 
 Команда идемпотентна: повторный запуск обновляет те же пять объявлений по их
-slug и не плодит копии. Файлы перезаливаются только с `--replace-media`.
+slug и не плодит копии.
 """
 
 from decimal import Decimal
@@ -289,9 +288,14 @@ LISTINGS: list[dict[str, Any]] = [
 
 
 class Command(BaseCommand):
-    help = "Пять объявлений с настоящими текстами, фотографиями и видеообзорами"
+    help = "Пять объявлений с настоящими текстами и характеристиками (по умолчанию без фото и видео)"
 
     def add_arguments(self, parser: CommandParser) -> None:
+        parser.add_argument(
+            "--with-media",
+            action="store_true",
+            help="Загрузить и прикрепить фото и видео из каталога ассетов.",
+        )
         parser.add_argument(
             "--assets",
             type=Path,
@@ -308,8 +312,13 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        self.assets = self._resolve_assets(options.get("assets"))
+        self.with_media = bool(options.get("with_media"))
         self.replace_media = bool(options.get("replace_media"))
+        if self.with_media or self.replace_media or options.get("assets"):
+            self.with_media = True
+            self.assets = self._resolve_assets(options.get("assets"))
+        else:
+            self.assets = None
 
         with transaction.atomic():
             owners = self._seed_owners()
@@ -465,27 +474,29 @@ class Command(BaseCommand):
             listing.published_at = now
             listing.save(update_fields=["published_at", "updated_at"])
 
-        order = 0
-        for name, title in spec["photos"]:
-            self._attach(
-                listing=listing,
-                order=order,
-                source=self._asset("figma", name),
-                kind=MediaKind.PHOTO,
-                title=title,
-                is_cover=order == 0,
-            )
-            order += 1
+        if self.with_media and self.assets:
+            order = 0
+            for name, title in spec.get("photos", []):
+                self._attach(
+                    listing=listing,
+                    order=order,
+                    source=self._asset("figma", name),
+                    kind=MediaKind.PHOTO,
+                    title=title,
+                    is_cover=order == 0,
+                )
+                order += 1
 
-        video_name, video_title = spec["video"]
-        self._attach(
-            listing=listing,
-            order=order,
-            source=self._asset("videos_obzor", video_name),
-            kind=MediaKind.VIDEO,
-            title=video_title,
-            is_cover=False,
-        )
+            if "video" in spec and spec["video"]:
+                video_name, video_title = spec["video"]
+                self._attach(
+                    listing=listing,
+                    order=order,
+                    source=self._asset("videos_obzor", video_name),
+                    kind=MediaKind.VIDEO,
+                    title=video_title,
+                    is_cover=False,
+                )
         return listing
 
     # -- медиа ----------------------------------------------------------------
