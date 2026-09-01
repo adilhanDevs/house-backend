@@ -26,7 +26,6 @@ env = environ.Env(
     JWT_ACCESS_TOKEN_LIFETIME_MINUTES=(int, 15),
     JWT_REFRESH_TOKEN_LIFETIME_DAYS=(int, 30),
     REDIS_URL=(str, "redis://localhost:6379/0"),
-    USE_S3=(bool, False),
 )
 
 # Читаем backend/.env, если он существует
