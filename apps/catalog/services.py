@@ -51,7 +51,6 @@ from apps.catalog.enums import (
 )
 from apps.catalog.field_rules import KIND_FIELDS, REQUIRED_BY_KIND, applicable_fields
 from apps.catalog.models import (
-    DRAFT_SLUG_HEAD,
     Builder,
     City,
     District,
@@ -59,7 +58,6 @@ from apps.catalog.models import (
     Listing,
     ListingMedia,
     ListingRoom,
-    build_listing_slug,
 )
 from apps.catalog.stats import bump_stat
 from apps.common.audit import audit
@@ -929,22 +927,6 @@ PUBLISH_CONFLICT_MESSAGES = {
 }
 
 
-def refresh_draft_slug(listing: Listing) -> bool:
-    """Пересобирает слаг черновика, когда у него наконец появился район.
-
-    Черновик заводится пустым, района в нём ещё нет, поэтому слаг получается
-    вида `listing-1k-4f2a…` — и таким уезжал в публикацию. Пересобираем, пока
-    объявление ещё черновик: ссылками на него никто поделиться не успел.
-    """
-    if listing.status != ListingStatus.DRAFT or not listing.district_id:
-        return False
-    if not listing.slug.startswith(f"{DRAFT_SLUG_HEAD}-"):
-        return False
-
-    listing.slug = build_listing_slug(listing.district.slug, listing.rooms)
-    return True
-
-
 def _search_source_snapshot(listing: Listing) -> tuple[Any, ...]:
     """Значения полей, из которых собирается полнотекстовый вектор."""
     return tuple(
@@ -1037,8 +1019,6 @@ def update_listing(listing: Listing, data: dict[str, Any]) -> Listing:
     with transaction.atomic():
         for field, value in data.items():
             setattr(listing, field, value)
-
-        refresh_draft_slug(listing)
 
         new_kind = data.get("kind")
         if new_kind is not None and new_kind != previous_kind:

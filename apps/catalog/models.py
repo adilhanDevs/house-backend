@@ -154,21 +154,18 @@ class ListingManager(models.Manager.from_queryset(ListingQuerySet)):
         return super().get_queryset().filter(is_deleted=False)
 
 
-# Голова слага у черновика, для которого район ещё не выбран.
-DRAFT_SLUG_HEAD = "listing"
-
-
 def build_listing_slug(district_slug: str, rooms: int) -> str:
     """«technopark-3k-9f1c2a4b» — читаемо и уникально.
 
-    Слаг опубликованного объявления не меняется: он попадает в ссылки,
-    которыми делятся пользователи. Пока объявление — черновик и района у него
-    ещё не было, слаг остаётся заглушкой `listing-…` и пересобирается, как
-    только район выбран (`apps/catalog/services.py`).
+    Слаг генерируется один раз при создании и дальше не меняется: он попадает
+    в ссылки, которыми делятся пользователи, и в адреса запросов, которые
+    клиент делает по ходу заполнения формы. У черновика без района голова
+    слага — «listing»; переименовывать его потом нельзя, иначе экран, уже
+    получивший слаг, начнёт ловить 404.
     """
     suffix = uuid.uuid4().hex[:SLUG_SUFFIX_LENGTH]
     tail = f"-{rooms}k-{suffix}"
-    head = (district_slug or DRAFT_SLUG_HEAD)[: SLUG_MAX_LENGTH - len(tail)]
+    head = (district_slug or "listing")[: SLUG_MAX_LENGTH - len(tail)]
     return f"{head}{tail}"
 
 
