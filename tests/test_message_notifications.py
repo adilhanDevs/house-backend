@@ -100,11 +100,13 @@ def test_new_message_setting_prevents_push(client_for, django_capture_on_commit_
         )
 
     notification = Notification.objects.get(user=conversation.seller)
-    with patch("firebase_admin.messaging.send_each_for_multicast") as fcm:
+    with patch(
+        "apps.notifications.push.get_fcm_app",
+        side_effect=AssertionError("FCM не должен вызываться при отключённых уведомлениях"),
+    ):
         assert send_push(notification.pk) == 0
 
     assert response.status_code == 201
-    fcm.assert_not_called()
 
 
 def test_notification_database_error_rolls_back_message(
