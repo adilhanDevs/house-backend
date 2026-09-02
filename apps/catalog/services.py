@@ -249,10 +249,16 @@ def add_listing_media(
 ) -> ListingMedia:
     """Прикладывает файл к объявлению с проверкой лимита.
 
-    Порядок и обложка проставляются автоматически: первое фото становится
-    обложкой карточки.
+    Порядок и обложка проставляются автоматически: фото становится обложкой,
+    только если обложки у объявления ещё нет.
+
+    Правило намеренно то же, что в `_store_upload`. Раньше здесь считалось
+    количество уже загруженных фото, и это расходилось с флагом: если первое
+    фото удаляли, а обложка переезжала на второе, счётчик мог снова оказаться
+    нулевым — и следующая загрузка ломалась об ограничение
+    `listing_media_single_cover`.
     """
-    existing = listing.media.filter(kind=kind).count()
+    has_cover = listing.media.filter(is_cover=True).exists()
     # Явная проверка на None: `or` сломался бы на нулевом порядке первого файла.
     top_order = listing.media.aggregate(top=Max("order"))["top"]
     next_order = 0 if top_order is None else top_order + 1
@@ -262,7 +268,7 @@ def add_listing_media(
         file=file,
         kind=kind,
         order=next_order,
-        is_cover=(existing == 0 and kind == MediaKind.PHOTO) if is_cover is None else is_cover,
+        is_cover=(kind == MediaKind.PHOTO and not has_cover) if is_cover is None else is_cover,
         **extra,
     )
     # Лимит проверяется и здесь, и в модели: сервис даёт понятную ошибку,
@@ -571,6 +577,9 @@ def reorder_listing_media(listing: Listing, order: list[int]) -> list[ListingMed
             item.order = position
         ListingMedia.objects.bulk_update(items, ["order"])
 
+    # Порядок задаёт обложку, когда явного флага нет (covers.pick_cover), а
+    # bulk_update сигналов не шлёт — сбрасываем кэш подборок вручную.
+    invalidate_filter_options_cache()
     return items
 
 
