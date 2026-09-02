@@ -256,6 +256,7 @@ REST_FRAMEWORK = {
         "review_create": env.str("REVIEW_CREATE_THROTTLE", default="1000/day"),
         "media_upload": env.str("MEDIA_UPLOAD_THROTTLE", default="1000/hour"),
         "wallet_topup": env.str("WALLET_TOPUP_THROTTLE", default="1000/hour"),
+        "message_send": env.str("MESSAGE_SEND_THROTTLE", default="30/min"),
     },
 }
 

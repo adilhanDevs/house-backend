@@ -53,3 +53,21 @@ def conversations_for(user: Any) -> QuerySet[Conversation]:
 def conversation_for_participant(*, user: Any, conversation_id: Any) -> Conversation:
     """Диалог виден только его покупателю или продавцу."""
     return get_object_or_404(_conversation_queryset(user), pk=conversation_id)
+
+
+def messages_for_participant(
+    *,
+    user: Any,
+    conversation_id: Any,
+    after: Any | None = None,
+) -> QuerySet[Message]:
+    """Сообщения диалога участника по возрастанию времени для polling."""
+    conversation = get_object_or_404(
+        Conversation.objects.filter(Q(buyer=user) | Q(seller=user)),
+        pk=conversation_id,
+    )
+    messages = Message.objects.filter(conversation=conversation).select_related("sender")
+    if after is not None:
+        reference = get_object_or_404(messages, pk=after)
+        messages = messages.filter(created_at__gte=reference.created_at).exclude(pk=reference.pk)
+    return messages.order_by("created_at", "id")

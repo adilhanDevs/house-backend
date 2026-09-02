@@ -3,14 +3,14 @@
 from typing import Any
 
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 
 from apps.catalog.covers import COVER_ATTR, cover_candidates, listing_cover_file
 from apps.catalog.enums import ListingStatus
 from apps.catalog.models import Listing
 from apps.common.exceptions import ConflictError
-from apps.messaging.models import Conversation
+from apps.messaging.models import Conversation, Message
 
 
 def _cover_url(listing: Listing) -> str:
@@ -46,3 +46,50 @@ def open_conversation(*, user: Any, listing_slug: str) -> tuple[Conversation, bo
                 **lookup
             )
             return conversation, False
+
+
+@transaction.atomic
+def send_message(
+    *,
+    user: Any,
+    conversation: Conversation,
+    text: str,
+    client_message_id: Any,
+) -> tuple[Message, bool]:
+    """Отправляет сообщение от участника с идемпотентностью по UUID клиента."""
+    locked = get_object_or_404(
+        Conversation.objects.select_for_update().filter(Q(buyer=user) | Q(seller=user)),
+        pk=conversation.pk,
+    )
+    message, created = Message.objects.get_or_create(
+        sender=user,
+        client_message_id=client_message_id,
+        defaults={"conversation": locked, "text": text.strip()},
+    )
+    if created:
+        locked.last_message_at = message.created_at
+        locked.save(update_fields=["last_message_at", "updated_at"])
+    return message, created
+
+
+@transaction.atomic
+def mark_conversation_read(
+    *,
+    user: Any,
+    conversation: Conversation,
+    last_message_id: Any,
+) -> int:
+    """Монотонно отмечает сообщения участника прочитанными до указанного."""
+    locked = get_object_or_404(
+        Conversation.objects.select_for_update().filter(Q(buyer=user) | Q(seller=user)),
+        pk=conversation.pk,
+    )
+    message = get_object_or_404(Message, conversation=locked, pk=last_message_id)
+    field = "buyer_last_read_at" if locked.buyer_id == user.pk else "seller_last_read_at"
+    current = getattr(locked, field)
+    if current is not None and current >= message.created_at:
+        return 0
+
+    setattr(locked, field, message.created_at)
+    locked.save(update_fields=[field, "updated_at"])
+    return 1

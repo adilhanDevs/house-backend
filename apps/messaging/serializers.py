@@ -4,7 +4,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.messaging.models import Conversation
+from apps.messaging.models import Conversation, Message
 
 
 class ConversationCreateSerializer(serializers.Serializer):
@@ -51,3 +51,23 @@ class ConversationSerializer(serializers.ModelSerializer):
                 obj.latest_message_created_at
             ),
         }
+
+
+class MessageCreateSerializer(serializers.Serializer):
+    text = serializers.CharField(max_length=2000, allow_blank=False, trim_whitespace=True)
+    client_message_id = serializers.UUIDField()
+
+
+class MessagePollSerializer(serializers.Serializer):
+    after = serializers.UUIDField(required=False)
+
+
+class MessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Message
+        fields = ["id", "sender_id", "text", "client_message_id", "created_at"]
+        read_only_fields = fields
+
+
+class ConversationReadSerializer(serializers.Serializer):
+    last_message_id = serializers.UUIDField()
