@@ -189,7 +189,13 @@ def test_publish_without_photos_fails(auth: APIClient, district) -> None:
 
 
 @pytest.mark.django_db
-def test_publish_goes_to_moderation(auth: APIClient, user, district) -> None:
+def test_draft_publishes_straight_to_the_catalog(auth: APIClient, user, district) -> None:
+    """Черновик уходит в эфир сразу — предварительной модерации у нас нет.
+
+    Модерация включается по жалобам (`MODERATION_REPORTS_THRESHOLD`) и при
+    повторной подаче отклонённого объявления, см.
+    `test_rejected_listing_returns_to_moderation`.
+    """
     slug = auth.post(DRAFT_URL).json()["slug"]
     fill_draft(auth, slug, district)
     ListingMediaFactory(listing=Listing.objects.get(slug=slug), order=0, is_cover=True)
@@ -197,9 +203,9 @@ def test_publish_goes_to_moderation(auth: APIClient, user, district) -> None:
     response = auth.post(PUBLISH_URL.format(slug=slug))
 
     assert response.status_code == 200
-    assert response.json()["status"] == ListingStatus.PENDING
+    assert response.json()["status"] == ListingStatus.ACTIVE
     listing = Listing.objects.get(slug=slug)
-    assert listing.published_at is None
+    assert listing.published_at is not None
 
 
 @pytest.mark.django_db
