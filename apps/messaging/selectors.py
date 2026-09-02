@@ -21,7 +21,7 @@ from apps.messaging.models import Conversation, Message
 
 def _conversation_queryset(user: Any) -> QuerySet[Conversation]:
     latest = Message.objects.filter(conversation_id=OuterRef("pk")).order_by("-created_at", "-id")
-    unread = (
+    unread = ~Q(messages__sender=user) & (
         Q(buyer=user, buyer_last_read_at__isnull=True)
         | Q(buyer=user, messages__created_at__gt=F("buyer_last_read_at"))
         | Q(seller=user, seller_last_read_at__isnull=True)

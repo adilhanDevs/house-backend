@@ -1,6 +1,7 @@
 """Контракт API открытия и чтения диалогов."""
 
 from datetime import timedelta
+from uuid import UUID
 
 import pytest
 from django.urls import reverse
@@ -184,6 +185,29 @@ def test_conversation_list_is_newest_first(client_for):
     ]
 
 
+def test_conversation_cursor_uses_uuid_tiebreaker_for_equal_timestamps(client_for):
+    buyer = UserFactory()
+    shared_timestamp = timezone.now()
+    conversation_ids = [UUID(int=value) for value in range(1, 6)]
+    for conversation_id in conversation_ids:
+        ConversationFactory(
+            id=conversation_id,
+            buyer=buyer,
+            last_message_at=shared_timestamp,
+        )
+    client = client_for(buyer)
+    url = reverse("messaging:conversation-list") + "?page_size=2"
+    seen_ids = []
+
+    while url:
+        response = client.get(url)
+        assert response.status_code == 200
+        seen_ids.extend(item["id"] for item in response.data["results"])
+        url = response.data["next"]
+
+    assert seen_ids == [str(value) for value in reversed(conversation_ids)]
+
+
 def test_list_returns_peer_latest_message_and_participant_unread_count(client_for):
     buyer = UserFactory()
     conversation = ConversationFactory(
@@ -209,7 +233,21 @@ def test_list_returns_peer_latest_message_and_participant_unread_count(client_fo
     assert item["latest_message"]["id"] == str(own_message.id)
     assert item["latest_message"]["sender_id"] == buyer.id
     assert item["latest_message"]["text"] == "mine"
-    assert item["unread_count"] == 2
+    assert item["unread_count"] == 1
+
+
+def test_unread_count_excludes_messages_sent_by_current_user(client_for):
+    buyer = UserFactory()
+    conversation = ConversationFactory(
+        buyer=buyer,
+        buyer_last_read_at=timezone.now() - timedelta(minutes=5),
+    )
+    MessageFactory(conversation=conversation, sender=buyer, text="mine")
+
+    response = client_for(buyer).get(reverse("messaging:conversation-list"))
+
+    assert response.status_code == 200
+    assert response.data["results"][0]["unread_count"] == 0
 
 
 def test_list_query_count_does_not_grow_with_conversations(client_for, django_assert_num_queries):
