@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from django.core.cache import cache
+from django.core.files.base import ContentFile
 from django.urls import reverse
 from rest_framework.test import APIClient
 
@@ -84,13 +85,9 @@ def test_without_is_cover_the_first_photo_by_order_wins(
 def test_video_is_cover_only_when_there_are_no_photos(
     api_client: APIClient, active_listing
 ) -> None:
-    video = ListingMediaFactory(
-        listing=active_listing,
-        kind=MediaKind.VIDEO,
-        order=0,
-        file__filename="clip.mp4",
-        thumbnail__filename="poster.jpg",
-    )
+    video = ListingMediaFactory(listing=active_listing, kind=MediaKind.VIDEO, order=0)
+    # Кадр-обложку ролика присылает приложение; без него видео обложкой не станет.
+    video.thumbnail.save("poster.jpg", ContentFile(b"fake-poster"), save=True)
     body = api_client.get(detail_url(active_listing)).json()
     assert body["cover_media_id"] == video.pk
 
@@ -157,13 +154,11 @@ def test_detail_cover_is_the_same_media_in_a_bigger_size(
     api_client: APIClient, active_listing
 ) -> None:
     """cover_url и cover_detail_url — один снимок, разные варианты размера."""
-    cover = ListingMediaFactory(
-        listing=active_listing,
-        order=0,
-        is_cover=True,
-        url_thumb__filename="a_thumb.webp",
-        url_medium__filename="a_medium.webp",
-    )
+    cover = ListingMediaFactory(listing=active_listing, order=0, is_cover=True)
+    # Варианты размеров собирает фоновая обработка — здесь подставляем их сами.
+    cover.url_thumb.save("a_thumb.webp", ContentFile(b"thumb"), save=False)
+    cover.url_medium.save("a_medium.webp", ContentFile(b"medium"), save=False)
+    cover.save(update_fields=["url_thumb", "url_medium"])
     ListingMediaFactory(listing=active_listing, order=1)
 
     body = api_client.get(detail_url(active_listing)).json()
