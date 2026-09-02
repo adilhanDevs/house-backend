@@ -26,6 +26,17 @@ pytestmark = pytest.mark.django_db
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
+# imagehash тянет numpy и scipy и в зависимостях проекта не значится:
+# `perceptual_hash` импортирует его лениво и молча обходится без него.
+# Хеш нужен только автопроверке дублей в модерации, поэтому там, где пакета
+# нет, проверять нечего.
+try:  # pragma: no cover - зависит от окружения
+    import imagehash  # noqa: F401
+
+    HAS_IMAGEHASH = True
+except ImportError:  # pragma: no cover - зависит от окружения
+    HAS_IMAGEHASH = False
+
 
 # -- вспомогательное ---------------------------------------------------------
 
@@ -332,8 +343,9 @@ def test_processing_fills_variants_and_phash(owner_client, upload):
 
     media = ListingMedia.objects.get(pk=response.data["media"][0]["id"])
     assert media.status == MediaStatus.READY
-    assert media.phash, "перцептивный хеш не посчитан"
     assert media.size_bytes
+    if HAS_IMAGEHASH:
+        assert media.phash, "перцептивный хеш не посчитан"
 
     sizes = {}
     for variant in ("thumb", "medium", "original"):
