@@ -16,6 +16,7 @@ from apps.messaging.selectors import (
     conversation_for_participant,
     conversations_for,
     messages_for_participant,
+    unread_count_for_participant,
 )
 from apps.messaging.serializers import (
     ConversationCreateSerializer,
@@ -121,4 +122,8 @@ class ConversationReadView(GenericAPIView):
             conversation=conversation,
             last_message_id=incoming.validated_data["last_message_id"],
         )
-        return Response({"updated": updated})
+        unread_count = unread_count_for_participant(
+            user=request.user,
+            conversation_id=conversation.id,
+        )
+        return Response({"updated": updated, "unread_count": unread_count})

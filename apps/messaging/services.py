@@ -66,6 +66,8 @@ def send_message(
         client_message_id=client_message_id,
         defaults={"conversation": locked, "text": text.strip()},
     )
+    if message.conversation_id != locked.id:
+        raise ConflictError("client_message_id уже использован в другом диалоге.")
     if created:
         locked.last_message_at = message.created_at
         locked.save(update_fields=["last_message_at", "updated_at"])

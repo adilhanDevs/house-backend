@@ -130,6 +130,35 @@ def test_retry_does_not_duplicate_message_or_side_effects(client_for):
     assert conversation.last_message_at == first_last_message_at
 
 
+def test_client_message_id_reuse_in_another_conversation_is_conflict(client_for):
+    buyer = UserFactory()
+    original_conversation = ConversationFactory(buyer=buyer)
+    target_conversation = ConversationFactory(
+        buyer=buyer,
+        last_message_at=timezone.now() - timedelta(days=1),
+    )
+    client_message_id = uuid.uuid4()
+    original = MessageFactory(
+        conversation=original_conversation,
+        sender=buyer,
+        client_message_id=client_message_id,
+        text="Секрет первого диалога",
+    )
+    target_last_message_at = target_conversation.last_message_at
+
+    response = client_for(buyer).post(
+        messages_url(target_conversation),
+        {"text": "Сообщение второго диалога", "client_message_id": str(client_message_id)},
+    )
+    target_conversation.refresh_from_db()
+
+    assert response.status_code == 409
+    assert str(original.id) not in str(response.data)
+    assert Message.objects.count() == 1
+    assert not target_conversation.messages.exists()
+    assert target_conversation.last_message_at == target_last_message_at
+
+
 def test_messages_are_chronological_and_after_is_incremental(client_for):
     conversation = ConversationFactory()
     messages = [MessageFactory(conversation=conversation) for _ in range(4)]
@@ -181,7 +210,7 @@ def test_after_reference_must_belong_to_the_conversation(client_for):
     assert response.status_code == 404
 
 
-def test_message_cursor_paginates_without_reordering(client_for):
+def test_history_pages_are_latest_first_but_each_page_is_chronological(client_for):
     conversation = ConversationFactory()
     messages = [MessageFactory(conversation=conversation) for _ in range(5)]
     base = timezone.now() - timedelta(hours=1)
@@ -190,14 +219,68 @@ def test_message_cursor_paginates_without_reordering(client_for):
 
     client = client_for(conversation.buyer)
     url = messages_url(conversation) + "?page_size=2"
-    seen = []
+    pages = []
     while url:
         response = client.get(url)
         assert response.status_code == 200
-        seen.extend(item["id"] for item in response.data["results"])
+        pages.append([item["id"] for item in response.data["results"]])
         url = response.data["next"]
 
-    assert seen == [str(message.id) for message in messages]
+    assert pages == [
+        [str(messages[3].id), str(messages[4].id)],
+        [str(messages[1].id), str(messages[2].id)],
+        [str(messages[0].id)],
+    ]
+
+
+def test_initial_history_selects_the_newest_default_page(client_for):
+    conversation = ConversationFactory()
+    messages = [MessageFactory(conversation=conversation) for _ in range(25)]
+    base = timezone.now() - timedelta(hours=1)
+    for index, message in enumerate(messages):
+        Message.objects.filter(pk=message.pk).update(created_at=base + timedelta(minutes=index))
+
+    response = client_for(conversation.buyer).get(messages_url(conversation))
+
+    assert response.status_code == 200
+    assert response.data["count"] == 25
+    assert [item["id"] for item in response.data["results"]] == [
+        str(message.id) for message in messages[5:]
+    ]
+    assert response.data["next"] is not None
+    assert response.data["previous"] is None
+
+
+def test_composite_cursor_is_stable_for_equal_times_and_midstream_insert(client_for):
+    conversation = ConversationFactory()
+    shared_timestamp = timezone.now() - timedelta(minutes=1)
+    messages = [
+        MessageFactory(conversation=conversation, id=uuid.UUID(int=value)) for value in range(1, 8)
+    ]
+    Message.objects.filter(conversation=conversation).update(created_at=shared_timestamp)
+    client = client_for(conversation.buyer)
+
+    first = client.get(messages_url(conversation) + "?page_size=3")
+    assert [item["id"] for item in first.data["results"]] == [
+        str(messages[index].id) for index in [4, 5, 6]
+    ]
+
+    inserted = MessageFactory(conversation=conversation, id=uuid.UUID(int=8))
+    Message.objects.filter(pk=inserted.pk).update(created_at=shared_timestamp)
+
+    second = client.get(first.data["next"])
+    third = client.get(second.data["next"])
+    seen = [item["id"] for item in first.data["results"]]
+    seen += [item["id"] for item in second.data["results"]]
+    seen += [item["id"] for item in third.data["results"]]
+
+    assert seen == [str(messages[index].id) for index in [4, 5, 6, 1, 2, 3, 0]]
+    assert str(inserted.id) not in seen
+    assert third.data["next"] is None
+    back_to_first = client.get(second.data["previous"])
+    assert [item["id"] for item in back_to_first.data["results"]] == [
+        str(messages[index].id) for index in [4, 5, 6]
+    ]
 
 
 def test_new_message_updates_last_message_at_and_recipient_unread_only(client_for):
@@ -237,13 +320,32 @@ def test_read_up_to_is_incremental_and_monotonic(client_for):
     zero_unread = client.get(reverse("messaging:conversation-list"))
 
     assert first.status_code == 200
-    assert first.data == {"updated": 1}
+    assert first.data == {"updated": 1, "unread_count": 1}
     assert first_read_at == old_at
     assert one_unread.data["results"][0]["unread_count"] == 1
-    assert repeated.data == {"updated": 0}
+    assert repeated.data == {"updated": 0, "unread_count": 1}
     assert conversation.buyer_last_read_at == first_read_at
-    assert final.data == {"updated": 1}
+    assert final.data == {"updated": 1, "unread_count": 0}
     assert zero_unread.data["results"][0]["unread_count"] == 0
+
+
+def test_read_response_counts_newer_peer_messages_but_excludes_own(client_for):
+    conversation = ConversationFactory(buyer_last_read_at=None)
+    old_peer = MessageFactory(conversation=conversation, sender=conversation.seller)
+    own = MessageFactory(conversation=conversation, sender=conversation.buyer)
+    new_peer = MessageFactory(conversation=conversation, sender=conversation.seller)
+    base = timezone.now() - timedelta(minutes=3)
+    Message.objects.filter(pk=old_peer.pk).update(created_at=base)
+    Message.objects.filter(pk=own.pk).update(created_at=base + timedelta(minutes=1))
+    Message.objects.filter(pk=new_peer.pk).update(created_at=base + timedelta(minutes=2))
+
+    response = client_for(conversation.buyer).post(
+        read_url(conversation),
+        {"last_message_id": str(old_peer.id)},
+    )
+
+    assert response.status_code == 200
+    assert response.data == {"updated": 1, "unread_count": 1}
 
 
 def test_seller_read_updates_only_seller_timestamp(client_for):

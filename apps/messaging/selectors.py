@@ -71,3 +71,16 @@ def messages_for_participant(
         reference = get_object_or_404(messages, pk=after)
         messages = messages.filter(created_at__gte=reference.created_at).exclude(pk=reference.pk)
     return messages.order_by("created_at", "id")
+
+
+def unread_count_for_participant(*, user: Any, conversation_id: Any) -> int:
+    """Текущее число непрочитанных peer messages для участника."""
+    conversation = get_object_or_404(
+        Conversation.objects.filter(Q(buyer=user) | Q(seller=user)),
+        pk=conversation_id,
+    )
+    unread = Message.objects.filter(conversation=conversation).exclude(sender=user)
+    read_at = conversation.read_at_for(user)
+    if read_at is not None:
+        unread = unread.filter(created_at__gt=read_at)
+    return unread.count()
