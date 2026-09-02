@@ -11,6 +11,8 @@ from apps.catalog.enums import ListingStatus
 from apps.catalog.models import Listing
 from apps.common.exceptions import ConflictError
 from apps.messaging.models import Conversation, Message
+from apps.notifications.models import NotificationType
+from apps.notifications.services import notify
 
 
 def _cover_url(listing: Listing) -> str:
@@ -71,6 +73,18 @@ def send_message(
     if created:
         locked.last_message_at = message.created_at
         locked.save(update_fields=["last_message_at", "updated_at"])
+        peer = locked.seller if locked.buyer_id == user.pk else locked.buyer
+        notify(
+            peer,
+            notification_type=NotificationType.NEW_MESSAGE,
+            title=user.name.strip() or "Новое сообщение",
+            body=message.text[:140],
+            payload={
+                "conversation_id": str(locked.id),
+                "listing_slug": locked.listing_slug,
+                "sender_id": user.pk,
+            },
+        )
     return message, created
 
 
