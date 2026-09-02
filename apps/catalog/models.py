@@ -5,12 +5,14 @@
 """
 
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -152,15 +154,21 @@ class ListingManager(models.Manager.from_queryset(ListingQuerySet)):
         return super().get_queryset().filter(is_deleted=False)
 
 
+# Голова слага у черновика, для которого район ещё не выбран.
+DRAFT_SLUG_HEAD = "listing"
+
+
 def build_listing_slug(district_slug: str, rooms: int) -> str:
     """«technopark-3k-9f1c2a4b» — читаемо и уникально.
 
-    Слаг генерируется один раз при создании и дальше не меняется: он попадает
-    в ссылки, которыми делятся пользователи.
+    Слаг опубликованного объявления не меняется: он попадает в ссылки,
+    которыми делятся пользователи. Пока объявление — черновик и района у него
+    ещё не было, слаг остаётся заглушкой `listing-…` и пересобирается, как
+    только район выбран (`apps/catalog/services.py`).
     """
     suffix = uuid.uuid4().hex[:SLUG_SUFFIX_LENGTH]
     tail = f"-{rooms}k-{suffix}"
-    head = (district_slug or "listing")[: SLUG_MAX_LENGTH - len(tail)]
+    head = (district_slug or DRAFT_SLUG_HEAD)[: SLUG_MAX_LENGTH - len(tail)]
     return f"{head}{tail}"
 
 
@@ -210,7 +218,16 @@ class Listing(TimeStampedModel):
         "Долгота", max_digits=9, decimal_places=6, blank=True, null=True
     )
 
-    price = models.DecimalField("Цена", max_digits=12, decimal_places=2, blank=True, null=True)
+    price = models.DecimalField(
+        "Цена",
+        max_digits=12,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        # Отрицательная и нулевая цена — не «скидка», а порча выдачи:
+        # такой объект встаёт первым в сортировке по возрастанию цены.
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
     currency = models.CharField(
         "Валюта", max_length=3, choices=Currency.choices, default=Currency.USD
     )
@@ -235,7 +252,14 @@ class Listing(TimeStampedModel):
     )
 
     rooms = models.PositiveSmallIntegerField("Комнат", default=0)
-    area = models.DecimalField("Площадь, м²", max_digits=8, decimal_places=2, blank=True, null=True)
+    area = models.DecimalField(
+        "Площадь, м²",
+        max_digits=8,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
     # Площади помещений живут в ListingRoom: набор комнат у каждого объекта
     # свой, фиксированного списка «гостиная / холл / спальня 2» не бывает.
     furniture = models.CharField(
@@ -251,7 +275,12 @@ class Listing(TimeStampedModel):
     exchange_possible = models.BooleanField("Возможен обмен", default=False)
 
     land_area = models.DecimalField(
-        "Площадь участка, соток", max_digits=8, decimal_places=2, blank=True, null=True
+        "Площадь участка, соток",
+        max_digits=8,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
     )
     floor = models.PositiveSmallIntegerField("Этаж", default=0)
     floors = models.PositiveSmallIntegerField("Этажность", default=0)
@@ -293,7 +322,12 @@ class Listing(TimeStampedModel):
         "Линия", max_length=8, choices=BuildingLine.choices, blank=True
     )
     ceiling_height = models.DecimalField(
-        "Высота потолков, м", max_digits=4, decimal_places=2, blank=True, null=True
+        "Высота потолков, м",
+        max_digits=4,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
     )
 
     landmarks = models.JSONField("Ключевые места", default=list, blank=True)

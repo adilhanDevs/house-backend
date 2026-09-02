@@ -267,6 +267,7 @@ class MediaUploadSerializer(serializers.Serializer):
 
         return attrs
 
+
 class ListingMediaUpdateSerializer(serializers.ModelSerializer):
     """Обновление метаданных медиафайла."""
 
@@ -589,6 +590,15 @@ class ListingUpdateSerializer(serializers.ModelSerializer):
         district = attrs.get("district")
         if district is not None and "city" not in attrs:
             attrs["city"] = district.city
+
+        # Этаж выше этажности — не опечатка клиента, а мусор в выдаче:
+        # фильтр «последний этаж» после такого перестаёт что-либо значить.
+        floor = attrs.get("floor", getattr(self.instance, "floor", None))
+        floors = attrs.get("floors", getattr(self.instance, "floors", None))
+        if floor and floors and floor > floors:
+            raise serializers.ValidationError(
+                {"floor": "Этаж не может быть больше этажности дома."}
+            )
 
         # Тип берём из запроса, а если его там нет — из уже сохранённого
         # объявления: клиент шлёт форму по частям.
