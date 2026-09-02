@@ -443,16 +443,50 @@ def _store_upload(
     if kind == MediaKind.VIDEO and thumbnail is not None:
         _store_video_poster(media, thumbnail)
 
+    # Длительность назвал клиент, а верить ему на слово нельзя: занизив её,
+    # можно залить двухчасовой ролик. Файл уже в хранилище, поэтому ffprobe
+    # читает заголовок именно его — временных копий и перекодирования, ради
+    # которых проверку когда-то унесли с сервера, здесь нет.
+    verify_later = kind == MediaKind.VIDEO and not _enforce_video_duration(media)
+
     media.save()
 
     if kind == MediaKind.PHOTO:
         transaction.on_commit(lambda: process_media.delay(media.pk))
-    else:
-        # Длительность назвал клиент, а верить ему на слово нельзя: после
-        # коммита ffprobe сверяет её с файлом и убирает ролик, если тот
-        # оказался длиннее лимита.
+    elif verify_later:
+        # Файла на диске нет (S3) — сверит фоновая задача, уже по факту.
         transaction.on_commit(lambda: verify_video_duration.delay(media.pk))
     return media
+
+
+def _enforce_video_duration(media: ListingMedia) -> bool:
+    """Отклоняет ролик длиннее лимита. Возвращает False, если проверить нечем.
+
+    Отказ — до сохранения записи и с удалением файла из хранилища: лучше
+    честные 400 сразу, чем 201 и молча пропавший ролик.
+    """
+    from apps.catalog.media import local_path, probe_video
+
+    path = local_path(media.file)
+    if path is None:
+        return False
+
+    duration = probe_video(path).get("duration_seconds")
+    if duration is None:
+        # ffprobe нет или файл ему не понятен — остаётся лимит размера,
+        # который уже проверен до записи в хранилище.
+        return True
+
+    limit = settings.LISTING_VIDEO_MAX_DURATION
+    if duration > limit:
+        media.file.delete(save=False)
+        raise DjangoValidationError(
+            f"Видео длиннее {limit // 60} минут. Обрежьте ролик и попробуйте снова.",
+            code="video_too_long",
+        )
+
+    media.duration_seconds = duration
+    return True
 
 
 def _store_video_poster(media: ListingMedia, thumbnail: Any) -> None:

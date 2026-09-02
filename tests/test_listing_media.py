@@ -252,8 +252,13 @@ def test_four_minute_video_is_rejected(owner_client, upload):
 
 
 @pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg не установлен")
-def test_short_video_is_accepted_and_gets_poster(owner_client, upload):
-    """Короткое видео принимается: длительность и кадр-превью заполняются задачей."""
+def test_short_video_is_accepted_with_client_poster(owner_client, upload):
+    """Короткий ролик принимается; кадр-обложку прикладывает приложение.
+
+    Кадр снимает клиент — он и так открывает ролик в плеере
+    (`flutter_app/lib/data/video_poster.dart`). Длительность сервер всё равно
+    перепроверяет сам: значению из запроса верить нельзя.
+    """
     client, listing = owner_client
 
     response = upload(
@@ -263,6 +268,8 @@ def test_short_video_is_accepted_and_gets_poster(owner_client, upload):
         MediaKind.VIDEO,
         title="Обзор квартиры",
         description="Краткое описание обзора",
+        thumbnail=upload_file(make_jpeg(1280, 720), "poster.jpg"),
+        duration_seconds=5,
     )
 
     assert response.status_code == 201, response.data
@@ -272,9 +279,46 @@ def test_short_video_is_accepted_and_gets_poster(owner_client, upload):
     media = ListingMedia.objects.get(pk=response.data["media"][0]["id"])
     assert media.status == MediaStatus.READY
     assert media.duration_seconds == 5
-    assert media.thumbnail, "кадр-превью не сохранён"
+    assert media.thumbnail, "кадр-обложка от клиента не сохранён"
     assert media.title == "Обзор квартиры"
     assert media.description == "Краткое описание обзора"
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg не установлен")
+def test_video_without_client_poster_is_still_accepted(owner_client, upload):
+    """Обложки нет — загрузка всё равно проходит: карточка возьмёт фото объекта."""
+    client, listing = owner_client
+
+    response = upload(
+        client,
+        listing,
+        [upload_file(make_video(5), "clip.mp4", "video/mp4")],
+        MediaKind.VIDEO,
+    )
+
+    assert response.status_code == 201, response.data
+    media = ListingMedia.objects.get(pk=response.data["media"][0]["id"])
+    assert media.status == MediaStatus.READY
+    assert media.duration_seconds == 5
+    assert not media.thumbnail
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg не установлен")
+def test_understated_duration_does_not_get_a_long_video_through(owner_client, upload):
+    """Клиент занизил длительность — сервер всё равно меряет файл сам."""
+    client, listing = owner_client
+
+    response = upload(
+        client,
+        listing,
+        [upload_file(make_video(240), "clip.mp4", "video/mp4")],
+        MediaKind.VIDEO,
+        duration_seconds=10,
+    )
+
+    assert response.status_code == 400
+    assert "длиннее 3 минут" in response.data["error"]["message"]
+    assert ListingMedia.objects.filter(listing=listing).count() == 0
 
 
 # -- обработка ---------------------------------------------------------------
