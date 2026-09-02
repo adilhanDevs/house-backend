@@ -81,7 +81,7 @@ def issue_otp(phone: str, purpose: str = OtpPurpose.LOGIN) -> tuple[OtpCode, boo
     else:
         from apps.users.tasks import send_otp_sms
 
-        transaction.on_commit(lambda: send_otp_sms.delay(phone, code))
+        transaction.on_commit(lambda: send_otp_sms.delay(phone, code, otp_id=otp.pk))
 
     return otp, is_new_user
 
@@ -156,6 +156,13 @@ def verify_otp(
             activate_pro(user)
         if needs_consent:
             record_consent(user, version, request=request)
+
+    if otp.request_id:
+        from apps.users.tasks import report_telegram_verification_status
+
+        transaction.on_commit(
+            lambda: report_telegram_verification_status.delay(otp.request_id, code)
+        )
 
     logger.info("Успешный вход %s (новый: %s)", mask_phone(phone), is_new_user)
     return user, is_new_user
@@ -330,6 +337,13 @@ def reset_password(phone: str, code: str, new_password: str) -> User:
         otp.save(update_fields=["is_used"])
         user.set_password(new_password)
         user.save(update_fields=["password"])
+
+    if otp.request_id:
+        from apps.users.tasks import report_telegram_verification_status
+
+        transaction.on_commit(
+            lambda: report_telegram_verification_status.delay(otp.request_id, code)
+        )
 
     audit(
         actor=user,

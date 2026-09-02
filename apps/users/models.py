@@ -168,6 +168,7 @@ class OtpCode(models.Model):
     )
     attempts = models.PositiveSmallIntegerField("Неудачных попыток", default=0)
     is_used = models.BooleanField("Использован", default=False)
+    request_id = models.CharField("ID запроса шлюза", max_length=128, blank=True, default="")
     created_at = models.DateTimeField("Создан", auto_now_add=True)
     expires_at = models.DateTimeField("Действует до")
 
