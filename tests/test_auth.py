@@ -337,8 +337,12 @@ def test_static_code_does_not_work_for_an_ordinary_number(api_client: APIClient)
 
 @pytest.mark.django_db
 def test_account_without_password_cannot_log_in_with_one(api_client: APIClient) -> None:
-    """Аккаунты, заведённые до пароля, входят не так — и не пускают чужого."""
-    user = UserFactory(phone=TEST_PHONE)
+    """Аккаунты, заведённые до пароля, входят не так — и не пускают чужого.
+
+    Такие пользователи есть: до этих правок аккаунт создавался подтверждением
+    кода и пароля не имел вовсе, а фабрика в тестах пароль ставит всегда.
+    """
+    user = User.objects.create_user(phone=TEST_PHONE, name="Без пароля")
     assert not user.has_usable_password()
 
     response = api_client.post(PASSWORD_LOGIN_URL, {"phone": TEST_PHONE, "password": GOOD_PASSWORD})
