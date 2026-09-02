@@ -348,3 +348,103 @@ def test_account_without_password_cannot_log_in_with_one(api_client: APIClient) 
     response = api_client.post(PASSWORD_LOGIN_URL, {"phone": TEST_PHONE, "password": GOOD_PASSWORD})
 
     assert response.status_code == 401
+
+
+# -- восстановление пароля ---------------------------------------------------
+#
+# Вход парольный, поэтому забытый пароль означает потерю аккаунта. Код из SMS
+# подтверждает владение номером и разрешает задать новый.
+
+RESET_URL = "/api/v1/auth/password/reset/"
+NEW_PASSWORD = "Новый-Пароль-2026"
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_password_reset_sets_a_new_password_and_logs_in(api_client: APIClient) -> None:
+    user = UserFactory(phone=TEST_PHONE)
+    user.set_password(GOOD_PASSWORD)
+    user.save(update_fields=["password"])
+
+    issue_otp(TEST_PHONE, "password_reset")
+    response = api_client.post(
+        RESET_URL, {"phone": TEST_PHONE, "code": DEBUG_CODE, "password": NEW_PASSWORD}
+    )
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["access"]
+
+    user.refresh_from_db()
+    assert user.check_password(NEW_PASSWORD)
+
+    logged_in = api_client.post(PASSWORD_LOGIN_URL, {"phone": TEST_PHONE, "password": NEW_PASSWORD})
+    assert logged_in.status_code == 200
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_password_reset_code_is_single_use(api_client: APIClient) -> None:
+    user = UserFactory(phone=TEST_PHONE)
+    issue_otp(TEST_PHONE, "password_reset")
+
+    first = api_client.post(
+        RESET_URL, {"phone": TEST_PHONE, "code": DEBUG_CODE, "password": NEW_PASSWORD}
+    )
+    second = api_client.post(
+        RESET_URL, {"phone": TEST_PHONE, "code": DEBUG_CODE, "password": "Ещё-Один-Пароль-9"}
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 400
+
+    user.refresh_from_db()
+    assert user.check_password(NEW_PASSWORD)
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_login_code_does_not_work_for_password_reset(api_client: APIClient) -> None:
+    """Код выписан на вход — сменить им пароль нельзя."""
+    UserFactory(phone=TEST_PHONE)
+    issue_otp(TEST_PHONE, "login")
+
+    response = api_client.post(
+        RESET_URL, {"phone": TEST_PHONE, "code": DEBUG_CODE, "password": NEW_PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert "Код не найден" in response.json()["error"]["message"]
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_password_reset_hides_whether_the_phone_is_registered(api_client: APIClient) -> None:
+    """На незарегистрированный номер — тот же ответ, что и на неверный код."""
+    issue_otp(TEST_PHONE, "password_reset")
+
+    response = api_client.post(
+        RESET_URL, {"phone": TEST_PHONE, "code": DEBUG_CODE, "password": NEW_PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Неверный код"
+    assert User.objects.filter(phone=TEST_PHONE).count() == 0
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_password_reset_rejects_a_weak_password(api_client: APIClient) -> None:
+    user = UserFactory(phone=TEST_PHONE)
+    user.set_password(GOOD_PASSWORD)
+    user.save(update_fields=["password"])
+
+    issue_otp(TEST_PHONE, "password_reset")
+    response = api_client.post(
+        RESET_URL, {"phone": TEST_PHONE, "code": DEBUG_CODE, "password": "12345678"}
+    )
+
+    assert response.status_code == 400
+    assert "password" in response.json()["error"]["details"]
+
+    user.refresh_from_db()
+    assert user.check_password(GOOD_PASSWORD)

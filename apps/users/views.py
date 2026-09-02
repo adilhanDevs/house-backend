@@ -77,6 +77,7 @@ from apps.users.serializers import (
     OtpRequestSerializer,
     OtpVerifySerializer,
     PasswordLoginSerializer,
+    PasswordResetSerializer,
     ProRegisterResponseSerializer,
     ProRegisterSerializer,
     ReviewCreateSerializer,
@@ -97,6 +98,7 @@ from apps.users.services import (
     issue_tokens,
     latest_identity,
     register_pro,
+    reset_password,
     review_identity,
     submit_identity,
     verify_otp,
@@ -290,6 +292,51 @@ class PasswordLoginView(GenericAPIView):
         user = authenticate_by_password(
             serializer.validated_data["phone"],
             serializer.validated_data["password"],
+        )
+
+        return Response(
+            {
+                **issue_tokens(user),
+                "user": UserMeSerializer(user, context=self.get_serializer_context()).data,
+                "is_new_user": False,
+            }
+        )
+
+
+class PasswordResetView(GenericAPIView):
+    """POST /api/v1/auth/password/reset/ — новый пароль по коду из SMS."""
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+    # Перебор кода здесь стоит дороже, чем перебор пароля: код короче.
+    throttle_classes = [PasswordLoginPhoneThrottle, PasswordLoginIpThrottle]
+    serializer_class = PasswordResetSerializer
+
+    @extend_schema(
+        operation_id="auth_password_reset",
+        summary="Восстановление пароля",
+        description=(
+            "Меняет пароль по коду, запрошенному через `/auth/otp/request/` "
+            "с `purpose=password_reset`, и сразу возвращает пару токенов.\n\n"
+            "Ответ не говорит, зарегистрирован ли номер: на неизвестный телефон "
+            "приходит то же «Неверный код»."
+        ),
+        responses={
+            status.HTTP_200_OK: AuthTokensSerializer,
+            status.HTTP_400_BAD_REQUEST: ErrorSerializer,
+            status.HTTP_429_TOO_MANY_REQUESTS: ErrorSerializer,
+        },
+        auth=[],
+    )
+    def post(self, request: Request) -> Response:
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        user = reset_password(
+            phone=data["phone"],
+            code=data["code"],
+            new_password=data["password"],
         )
 
         return Response(

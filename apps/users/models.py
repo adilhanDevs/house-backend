@@ -147,6 +147,7 @@ class OtpPurpose(models.TextChoices):
 
     LOGIN = "login", "Вход"
     REGISTER = "register", "Регистрация"
+    PASSWORD_RESET = "password_reset", "Восстановление пароля"
     PRO_REGISTER = "pro_register", "Регистрация исполнителя"
 
 

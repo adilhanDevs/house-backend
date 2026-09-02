@@ -262,6 +262,32 @@ class PasswordLoginSerializer(serializers.Serializer):
         return normalize_phone(value)
 
 
+class PasswordResetSerializer(serializers.Serializer):
+    """Смена пароля по коду из SMS — экран «Забыли пароль»."""
+
+    phone = serializers.CharField(max_length=32)
+    code = serializers.RegexField(r"^\d{4}$", help_text="4 цифры из SMS.")
+    password = serializers.CharField(
+        max_length=128,
+        write_only=True,
+        style={"input_type": "password"},
+        help_text="Новый пароль.",
+    )
+
+    def validate_phone(self, value: str) -> str:
+        return normalize_phone(value)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        # Те же правила, что при регистрации: иначе восстановление пароля
+        # становится способом обойти требования к нему.
+        candidate = User(phone=attrs["phone"])
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+        return attrs
+
+
 class IdentitySubmitSerializer(serializers.ModelSerializer):
     """Подача документов на верификацию."""
 
