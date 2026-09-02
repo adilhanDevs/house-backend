@@ -528,3 +528,220 @@ def test_finik_callback_for_another_account_does_not_credit(
     assert response.status_code == 403
     assert get_wallet(user).balance == 0
     assert Payment.objects.get(pk=payment_id).status == PaymentStatus.PENDING
+
+
+@finik_settings
+def test_finik_status_poll_reconciles_and_credits_payment(auth: APIClient, user):
+    """Поллинг статуса через GET /wallet/topup/{id}/ автоматически сверяет платёж в Finik."""
+    from apps.billing.providers.finik import FinikPaymentProvider
+
+    create_response = {"data": {"createItem": {"id": "finik-item-rec-1"}}}
+    with patch("apps.billing.providers.finik._finik_graphql", return_value=create_response):
+        created = auth.post(
+            TOPUP_URL,
+            {"amount_kgs": 12_000},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex,
+        )
+
+    payment_id = created.data["payment_id"]
+    payment = Payment.objects.get(pk=payment_id)
+    assert payment.status == PaymentStatus.PENDING
+
+    verified_item = {
+        "id": "finik-item-rec-1",
+        "transactionId": "trx-rec-1",
+        "fixedAmount": 12_000,
+        "paymentCount": 1,
+        "account": {"id": FINIK_ACCOUNT},
+        "requiredFields": [{"fieldId": "paymentId", "value": str(payment_id)}],
+    }
+
+    with patch.object(
+        FinikPaymentProvider, "verify_finik_item", return_value=verified_item
+    ):
+        status_resp = auth.get(STATUS_URL.format(payment_id=payment_id))
+
+    assert status_resp.status_code == 200
+    assert status_resp.data["status"] == "succeeded"
+    assert status_resp.data["credited_bricks"] == 13_200
+    assert status_resp.data["balance"] == 13_200
+
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.SUCCEEDED
+    assert get_wallet(user).balance == 13_200
+
+
+@finik_settings
+def test_finik_callback_amount_mismatch_is_rejected(
+    auth: APIClient, user, api_client: APIClient
+):
+    """Сумма в колбэке/сверке должна строго совпадать с суммой в Payment."""
+    from apps.billing.providers.finik import FinikPaymentProvider
+
+    create_response = {"data": {"createItem": {"id": "finik-item-bad-amount"}}}
+    with patch("apps.billing.providers.finik._finik_graphql", return_value=create_response):
+        created = auth.post(
+            TOPUP_URL,
+            {"amount_kgs": 12_000},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex,
+        )
+
+    payment_id = created.data["payment_id"]
+    # Попытка прислать 1 сом вместо 12 000
+    verified_item = {
+        "id": "finik-item-bad-amount",
+        "fixedAmount": 1,
+        "paymentCount": 1,
+        "account": {"id": FINIK_ACCOUNT},
+        "requiredFields": [{"fieldId": "paymentId", "value": str(payment_id)}],
+    }
+
+    with patch.object(
+        FinikPaymentProvider, "verify_finik_transaction", return_value=verified_item
+    ):
+        response = finik_callback(api_client, "finik-item-bad-amount", str(payment_id), amount="1.00")
+
+    assert response.status_code == 200
+    assert response.data.get("detail") == "Сумма не совпадает"
+    assert get_wallet(user).balance == 0
+    assert Payment.objects.get(pk=payment_id).status == PaymentStatus.PENDING
+
+
+# ----------------------------------------------------------------------------
+# Тесты ENV-оверрайда тестовой суммы Finik (FINIK_TEST_AMOUNT_KGS)
+# ----------------------------------------------------------------------------
+
+
+@finik_settings
+def test_finik_test_amount_override_for_allowed_user(
+    auth: APIClient, user, settings
+):
+    """Разрешённый пользователь получает счёт на test amount вместо номинальной суммы."""
+    from apps.billing.providers.finik import FinikPaymentProvider
+
+    settings.FINIK_TEST_AMOUNT_KGS = "1"
+    settings.FINIK_TEST_USER_IDS = [str(user.pk)]
+
+    captured_input = {}
+
+    def fake_graphql(query, variables):
+        captured_input.update(variables.get("input", {}))
+        return {"data": {"createItem": {"id": "finik-test-item-1"}}}
+
+    with patch("apps.billing.providers.finik._finik_graphql", side_effect=fake_graphql):
+        response = auth.post(
+            TOPUP_URL,
+            {"amount_kgs": 10_000},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex,
+        )
+
+    assert response.status_code == 201
+    assert captured_input["fixedAmount"] == 1
+    payment = Payment.objects.get(pk=response.data["payment_id"])
+    assert payment.amount_kgs == Decimal("1.00")
+    assert payment.bricks == 1
+    assert payment.raw_response["test_override"]["is_test"] is True
+    assert payment.raw_response["test_override"]["nominal_amount_kgs"] == "10000"
+
+
+@finik_settings
+def test_finik_test_amount_override_ignored_for_non_allowed_user(
+    auth: APIClient, user, settings
+):
+    """Пользователь не из allowlist получает реальный счёт даже при включённом FINIK_TEST_AMOUNT_KGS."""
+    settings.FINIK_TEST_AMOUNT_KGS = "1"
+    settings.FINIK_TEST_USER_IDS = ["999999", "+996700999999"]
+
+    captured_input = {}
+
+    def fake_graphql(query, variables):
+        captured_input.update(variables.get("input", {}))
+        return {"data": {"createItem": {"id": "finik-norm-item-1"}}}
+
+    with patch("apps.billing.providers.finik._finik_graphql", side_effect=fake_graphql):
+        response = auth.post(
+            TOPUP_URL,
+            {"amount_kgs": 10_000},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex,
+        )
+
+    assert response.status_code == 201
+    assert captured_input["fixedAmount"] == 10_000
+    payment = Payment.objects.get(pk=response.data["payment_id"])
+    assert payment.amount_kgs == Decimal("10000.00")
+    assert payment.bricks == 10_000
+    assert payment.raw_response["test_override"]["is_test"] is False
+
+
+@finik_settings
+def test_finik_test_amount_override_ignored_when_allowlist_is_empty(
+    auth: APIClient, user, settings
+):
+    """Fail-closed: если FINIK_TEST_USER_IDS пустой, оверрайд никому не выдаётся."""
+    settings.FINIK_TEST_AMOUNT_KGS = "1"
+    settings.FINIK_TEST_USER_IDS = []
+
+    captured_input = {}
+
+    def fake_graphql(query, variables):
+        captured_input.update(variables.get("input", {}))
+        return {"data": {"createItem": {"id": "finik-norm-item-2"}}}
+
+    with patch("apps.billing.providers.finik._finik_graphql", side_effect=fake_graphql):
+        response = auth.post(
+            TOPUP_URL,
+            {"amount_kgs": 5_000},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex,
+        )
+
+    assert response.status_code == 201
+    assert captured_input["fixedAmount"] == 5_000
+    payment = Payment.objects.get(pk=response.data["payment_id"])
+    assert payment.amount_kgs == Decimal("5000.00")
+
+
+@finik_settings
+def test_finik_test_amount_payment_verification_and_exact_fulfillment(
+    auth: APIClient, user, api_client: APIClient, settings
+):
+    """После оплаты 1 сом начисляется ровно 1 кирпич, а не номинальная сумма."""
+    from apps.billing.providers.finik import FinikPaymentProvider
+
+    settings.FINIK_TEST_AMOUNT_KGS = "1"
+    settings.FINIK_TEST_USER_IDS = [str(user.pk)]
+
+    create_response = {"data": {"createItem": {"id": "finik-item-test-1"}}}
+    with patch("apps.billing.providers.finik._finik_graphql", return_value=create_response):
+        created = auth.post(
+            TOPUP_URL,
+            {"amount_kgs": 12_000},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex,
+        )
+
+    payment_id = created.data["payment_id"]
+
+    verified_item = {
+        "id": "finik-item-test-1",
+        "fixedAmount": 1,
+        "paymentCount": 1,
+        "account": {"id": FINIK_ACCOUNT},
+        "requiredFields": [{"fieldId": "paymentId", "value": str(payment_id)}],
+    }
+
+    with patch.object(
+        FinikPaymentProvider, "verify_finik_transaction", return_value=verified_item
+    ):
+        response = finik_callback(api_client, "finik-item-test-1", str(payment_id), amount="1.00")
+
+    assert response.status_code == 200
+    assert get_wallet(user).balance == 1  # 1 сом -> 1 кирпич (не 12 000!)
+    payment = Payment.objects.get(pk=payment_id)
+    assert payment.status == PaymentStatus.SUCCEEDED
+
+
