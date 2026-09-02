@@ -939,6 +939,34 @@ def ensure_free_slot(listing: Listing) -> None:
         return
 
     if active_listings_count(listing.owner) >= limit:
+        from apps.billing.models import Subscription, SubscriptionStatus
+
+        now = timezone.now()
+        had_paid_sub = (
+            Subscription.objects.filter(
+                user=listing.owner,
+                ends_at__lte=now,
+            )
+            .exclude(tariff__code="free")
+            .exists()
+        )
+        has_active_sub = (
+            Subscription.objects.filter(
+                user=listing.owner,
+                status=SubscriptionStatus.ACTIVE,
+                starts_at__lte=now,
+                ends_at__gt=now,
+            )
+            .exclude(tariff__code="free")
+            .exists()
+        )
+        if had_paid_sub and not has_active_sub:
+            raise ConflictError(
+                "Срок действия вашего тарифа закончился. "
+                f"На бесплатном тарифе доступно {limit} активных объявлений. "
+                "Продлите тариф или архивируйте активные объявления."
+            )
+
         raise ConflictError(
             f"Достигнут лимит активных объявлений: одновременно можно держать {limit}. "
             "Архивируйте одно из активных или перейдите на другой тариф."

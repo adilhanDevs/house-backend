@@ -8,7 +8,12 @@ from django.db.models import QuerySet
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveUpdateDestroyAPIView
@@ -30,7 +35,7 @@ from apps.catalog.views import (
     DEFAULT_LISTING_ORDERING,
     ListingCursorPagination,
 )
-from apps.common.audit import client_ip, record_audit
+from apps.common.audit import audit, client_ip, record_audit
 from apps.common.exceptions import ApiValidationError
 from apps.common.models import AuditLog
 from apps.common.pagination import DefaultCursorPagination
@@ -76,6 +81,7 @@ from apps.users.serializers import (
     OtpRequestResponseSerializer,
     OtpRequestSerializer,
     OtpVerifySerializer,
+    PasswordChangeSerializer,
     PasswordLoginSerializer,
     PasswordResetSerializer,
     ProRegisterResponseSerializer,
@@ -348,6 +354,40 @@ class PasswordResetView(GenericAPIView):
         )
 
 
+class PasswordChangeView(GenericAPIView):
+    """POST /api/v1/auth/password/change/ — смена пароля авторизованным пользователем."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = PasswordChangeSerializer
+
+    @extend_schema(
+        operation_id="auth_password_change",
+        summary="Смена пароля",
+        description="Меняет пароль текущего авторизованного пользователя.",
+        request=PasswordChangeSerializer,
+        responses={
+            status.HTTP_200_OK: OpenApiResponse(description="Пароль успешно изменён"),
+            status.HTTP_400_BAD_REQUEST: ErrorSerializer,
+            status.HTTP_401_UNAUTHORIZED: ErrorSerializer,
+        },
+    )
+    def post(self, request: Request) -> Response:
+        serializer = self.get_serializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        audit(
+            actor=request.user,
+            action=AuditLog.Action.PASSWORD_RESET,
+            target=request.user,
+            target_user=request.user,
+            request=request,
+            changes={"password": {"before": "***", "after": "***"}},
+        )
+
+        return Response({"message": "Пароль успешно изменён."}, status=status.HTTP_200_OK)
+
+
 class LogoutView(GenericAPIView):
     """POST /api/v1/auth/logout/ — отозвать refresh-токен."""
 
@@ -389,9 +429,9 @@ class LogoutView(GenericAPIView):
         operation_id="users_me_update",
         summary="Изменить профиль",
         description=(
-            "Менять можно только `name` и `avatar`. Поля `phone`, `is_pro`, `iin`, "
-            "`is_staff` доступны только на чтение — если их передать, они молча "
-            "игнорируются."
+            "Менять можно `name`, `avatar`, `profile_cover`, `whatsapp_phone`. "
+            "Поля `phone`, `is_pro`, `iin`, `is_staff` доступны только на чтение — "
+            "если их передать, они молча игнорируются."
         ),
         request=UserUpdateSerializer,
         responses={
@@ -417,6 +457,7 @@ class UserMeView(RetrieveUpdateDestroyAPIView):
     """GET / PATCH / DELETE /api/v1/users/me/."""
 
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_object(self) -> User:

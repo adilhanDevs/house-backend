@@ -410,11 +410,14 @@ def anonymize_user(user: User) -> int:
 
     if user.avatar:
         user.avatar.delete(save=False)
+    if user.profile_cover:
+        user.profile_cover.delete(save=False)
 
     user.phone = build_deleted_phone()
     user.name = ""
     user.iin = ""
     user.avatar = None
+    user.profile_cover = None
     user.seller_kind = ""
     user.is_pro = False
     user.is_active = False
@@ -425,6 +428,7 @@ def anonymize_user(user: User) -> int:
             "name",
             "iin",
             "avatar",
+            "profile_cover",
             "seller_kind",
             "is_pro",
             "is_active",

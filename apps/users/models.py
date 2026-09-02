@@ -83,6 +83,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text="Номер для связи в WhatsApp, E.164.",
     )
     avatar = models.ImageField("Аватар", upload_to="avatars/%Y/%m/", blank=True, null=True)
+    profile_cover = models.ImageField(
+        "Обложка профиля",
+        upload_to="profile_covers/%Y/%m/",
+        blank=True,
+        null=True,
+    )
 
     is_active = models.BooleanField("Активен", default=True)
     is_staff = models.BooleanField("Доступ в админку", default=False)

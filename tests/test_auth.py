@@ -448,3 +448,84 @@ def test_password_reset_rejects_a_weak_password(api_client: APIClient) -> None:
 
     user.refresh_from_db()
     assert user.check_password(GOOD_PASSWORD)
+
+
+# -- регистрация не плодит пользователей -------------------------------------
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_registration_with_an_existing_phone_does_not_create_a_second_user(
+    api_client: APIClient,
+) -> None:
+    """Номер уже зарегистрирован — регистрация приводит к тому же аккаунту."""
+    existing = UserFactory(phone=TEST_PHONE, name="Азамат")
+
+    issue_otp(TEST_PHONE, "register")
+    response = api_client.post(
+        VERIFY_URL,
+        {
+            "phone": TEST_PHONE,
+            "code": DEBUG_CODE,
+            "purpose": "register",
+            "name": "Кто-то другой",
+            "password": GOOD_PASSWORD,
+            **CONSENT,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_new_user"] is False
+    assert User.objects.filter(phone=TEST_PHONE).count() == 1
+
+    existing.refresh_from_db()
+    assert existing.name == "Азамат", "имя владельца номера перезаписывать нельзя"
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_repeated_verification_does_not_create_a_duplicate(api_client: APIClient) -> None:
+    """Двойной тап по «Подтвердить»: второй запрос не заводит второй аккаунт."""
+    issue_otp(TEST_PHONE, "register")
+    payload = {
+        "phone": TEST_PHONE,
+        "code": DEBUG_CODE,
+        "purpose": "register",
+        "name": "Азамат",
+        "password": GOOD_PASSWORD,
+        **CONSENT,
+    }
+
+    first = api_client.post(VERIFY_URL, payload)
+    second = api_client.post(VERIFY_URL, payload)
+
+    assert first.status_code == 200
+    # Код одноразовый, поэтому повтор отклоняется — но аккаунт остаётся один.
+    assert second.status_code == 400
+    assert User.objects.filter(phone=TEST_PHONE).count() == 1
+
+
+@pytest.mark.django_db
+@with_test_phone
+def test_registration_name_reaches_the_profile(api_client: APIClient) -> None:
+    """Имя из формы должно вернуться в /users/me — иначе поле собрано зря."""
+    issue_otp(TEST_PHONE, "register")
+    registered = api_client.post(
+        VERIFY_URL,
+        {
+            "phone": TEST_PHONE,
+            "code": DEBUG_CODE,
+            "purpose": "register",
+            "name": "Азамат Осмонов",
+            "password": GOOD_PASSWORD,
+            **CONSENT,
+        },
+    )
+    assert registered.status_code == 200
+
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {registered.json()['access']}")
+    me = api_client.get(ME_URL)
+
+    assert me.status_code == 200
+    assert me.json()["name"] == "Азамат Осмонов"
+    assert me.json()["phone"] == TEST_PHONE
