@@ -405,13 +405,17 @@ def _store_upload(
     приложение — оно и так открывает ролик в плеере. Раньше ради этого прямо в
     запросе писалась временная копия файла и запускались ffprobe и ffmpeg.
     """
+    import time
+
     from django.db import transaction
 
     from apps.catalog.media import source_extension, validate_photo, validate_video
     from apps.catalog.tasks import process_media, verify_video_duration
 
+    t0 = time.monotonic()
     data = upload.read()
     upload.seek(0)
+    t_read = time.monotonic()
 
     extra: dict[str, Any] = {
         "size_bytes": len(data),
@@ -432,6 +436,8 @@ def _store_upload(
         if height:
             extra.setdefault("height", int(height))
 
+    t_validate = time.monotonic()
+
     media = ListingMedia(
         listing=listing,
         kind=kind,
@@ -445,9 +451,11 @@ def _store_upload(
     # Имя файла с телефона отбрасывается: оно может содержать ПДн, а попадёт
     # в публичный URL. Ключ собирается из UUID объявления и записи.
     media.file.save(f"{media.uuid}_source.{source_extension(data, kind)}", upload, save=False)
+    t_store = time.monotonic()
 
     if kind == MediaKind.VIDEO and thumbnail is not None:
         _store_video_poster(media, thumbnail)
+    t_poster = time.monotonic()
 
     # Длительность назвал клиент, а верить ему на слово нельзя: занизив её,
     # можно залить двухчасовой ролик. Файл уже в хранилище, поэтому ffprobe
@@ -455,7 +463,26 @@ def _store_upload(
     # которых проверку когда-то унесли с сервера, здесь нет.
     verify_later = kind == MediaKind.VIDEO and not _enforce_video_duration(media)
 
+    t_probe = time.monotonic()
+
     media.save()
+    t_db = time.monotonic()
+
+    # Разбор по стадиям: без него нельзя отличить «медленный сервер» от
+    # «медленной сети» — со стороны клиента и то и другое выглядит ожиданием.
+    logger.info(
+        "MEDIA_STORE kind=%s bytes=%s read_ms=%.0f validate_ms=%.0f storage_ms=%.0f "
+        "poster_ms=%.0f probe_ms=%.0f db_ms=%.0f total_ms=%.0f",
+        kind,
+        len(data),
+        (t_read - t0) * 1000,
+        (t_validate - t_read) * 1000,
+        (t_store - t_validate) * 1000,
+        (t_poster - t_store) * 1000,
+        (t_probe - t_poster) * 1000,
+        (t_db - t_probe) * 1000,
+        (t_db - t0) * 1000,
+    )
 
     if kind == MediaKind.PHOTO:
         transaction.on_commit(lambda: process_media.delay(media.pk))
@@ -1075,6 +1102,9 @@ def update_listing(listing: Listing, data: dict[str, Any]) -> Listing:
         listing.old_price = listing.price
 
     previous_price = listing.price
+    # Валюта на момент «до»: снижение считается только внутри одной валюты,
+    # иначе смена USD → KGS выглядела бы обвалом цены.
+    previous_currency = listing.currency
 
     # Экспликация помещений — не поле модели, а связанный список; форма
     # присылает его целиком, поэтому прежний набор заменяется, а не
@@ -1127,10 +1157,11 @@ def update_listing(listing: Listing, data: dict[str, Any]) -> Listing:
         # новым словам и продолжает находиться по старым.
         _schedule_search_reindex(listing)
 
+    price_change_log = None
     if new_price is not None and previous_price != new_price:
         # Цена — то, ради чего объявление и открывают; её изменения должны
         # быть восстановимы по журналу, а не только по последнему значению.
-        audit(
+        price_change_log = audit(
             actor=listing.owner,
             action=AuditLog.Action.LISTING_PRICE_CHANGED,
             target=listing,
@@ -1147,7 +1178,23 @@ def update_listing(listing: Listing, data: dict[str, Any]) -> Listing:
     ):
         from apps.notifications.services import notify_listing_price_drop
 
-        transaction.on_commit(lambda: notify_listing_price_drop(listing, previous_price, new_price))
+        # Ключ события берём из журнала: каждая запись об изменении цены
+        # уникальна, поэтому падение до той же отметки во второй раз — это
+        # другое событие, и подписчик про него узнает.
+        event_key = (
+            f"price-drop:{price_change_log.pk}"
+            if price_change_log is not None
+            else f"price-drop:{listing.pk}:{previous_price}:{new_price}"
+        )
+        transaction.on_commit(
+            lambda: notify_listing_price_drop(
+                listing,
+                previous_price,
+                new_price,
+                event_key=event_key,
+                old_currency=previous_currency,
+            )
+        )
 
     return listing
 

@@ -23,6 +23,7 @@ except ImportError:
         while batch := tuple(islice(it, n)):
             yield batch
 
+
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -60,8 +61,16 @@ def _load_credentials() -> dict[str, Any] | None:
 
 
 def get_fcm_app() -> Any:
-    """Инициализирует firebase-admin один раз на процесс."""
+    """Инициализирует firebase-admin один раз на процесс.
+
+    Проверка выключателя стоит до чтения кредов: с PUSH_ENABLED=0 файл
+    service-account не открывается и firebase_admin не импортируется, поэтому
+    прод поднимается без единого секрета на диске.
+    """
     global _fcm_app, _fcm_checked
+
+    if not settings.PUSH_ENABLED:
+        return None
 
     if _fcm_checked:
         return _fcm_app
@@ -115,19 +124,48 @@ def _deactivate_tokens(tokens: list[str], response: Any) -> int:
     return len(dead)
 
 
+#: Что из payload уезжает в push, по типу события.
+#:
+#: Раньше payload переносился целиком, а он растёт: у снижения цены там уже
+#: адрес, район, площадь, этажи и обложка. FCM отбрасывает data больше 4 КБ
+#: целиком, поэтому список полей задан явно — новое поле карточки не утечёт
+#: в push само собой и не утащит с собой всю доставку.
+PUSH_DATA_FIELDS: dict[str, tuple[str, ...]] = {
+    "new_message": ("conversation_id", "listing_slug", "sender_id", "sender_name", "preview"),
+    "price_drop": (
+        "listing_slug",
+        "old_price",
+        "new_price",
+        "currency",
+        "drop_amount",
+        "drop_percent",
+        "reason",
+        "cover_url",
+    ),
+    "saved_filter_match": ("listing_slug", "filter_id"),
+    "listing_moderated": ("listing_slug", "status"),
+    "promotion_expiring": ("listing_slug", "ends_at"),
+    "wallet_topup": ("amount", "bricks"),
+    "system": ("kind",),
+}
+
+
 def _data_payload(notification: Any) -> dict[str, str]:
-    """FCM принимает только строковые значения в data."""
-    payload = {
+    """Данные для перехода по нажатию. Только строки: FCM других не принимает."""
+    payload: dict[str, str] = {
         "notification_id": str(notification.pk),
         "type": str(notification.type),
     }
     if notification.listing_id:
         payload["listing_id"] = str(notification.listing_id)
 
-    for key, value in (notification.payload or {}).items():
-        payload[str(key)] = (
-            value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-        )
+    allowed = PUSH_DATA_FIELDS.get(str(notification.type), ())
+    source = notification.payload or {}
+    for key in allowed:
+        if key not in source:
+            continue
+        value = source[key]
+        payload[key] = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
     return payload
 
@@ -143,8 +181,14 @@ def send_to_user(user: Any, notification: Any) -> int:
     if preferences is None:
         preferences = NotificationSettings.objects.filter(user=user).first()
 
-    if preferences is not None and not preferences.allows(notification.type):
-        logger.info("Push типа %s отключён пользователем %s", notification.type, user.pk)
+    reason = (notification.payload or {}).get("reason")
+    if preferences is not None and not preferences.allows_reason(notification.type, reason):
+        logger.info(
+            "Push типа %s (повод %s) отключён пользователем %s",
+            notification.type,
+            reason or "-",
+            user.pk,
+        )
         return 0
 
     # Порядок фиксируем: по нему сопоставляются ответы FCM с токенами.

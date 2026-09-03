@@ -317,6 +317,11 @@ FINIK_TEST_USER_IDS = env.list("FINIK_TEST_USER_IDS", default=[])
 # ----------------------------------------------------------------------------
 # Push-уведомления (FCM)
 # ----------------------------------------------------------------------------
+# Главный выключатель push-транспорта. С нулём уведомления по-прежнему
+# создаются и лежат в базе — не уходит только отправка, и креды Firebase при
+# этом не читаются вовсе. Прод стартует именно так, пока нет service-account.
+PUSH_ENABLED = env.bool("PUSH_ENABLED", default=False)
+
 FCM_CREDENTIALS_FILE = env.str("FCM_CREDENTIALS_FILE", default="")
 FCM_CREDENTIALS_BASE64 = env.str("FCM_CREDENTIALS_BASE64", default="")
 
@@ -324,6 +329,11 @@ FCM_CREDENTIALS_BASE64 = env.str("FCM_CREDENTIALS_BASE64", default="")
 # Каталог
 # ----------------------------------------------------------------------------
 FALLBACK_USD_KGS_RATE = env.float("FALLBACK_USD_KGS_RATE", default=87.5)
+
+# Сколько дней просмотр объявления считается свежим для уведомления о снижении
+# цены. Единственное место, где живёт это число: и рассылка, и выборка адресатов
+# смотрят сюда, иначе окна разъезжаются между запросом и фоновой задачей.
+PRICE_DROP_VIEW_WINDOW_DAYS = env.int("PRICE_DROP_VIEW_WINDOW_DAYS", default=30)
 NBKR_RATES_URL = env.str("NBKR_RATES_URL", default="https://www.nbkr.kg/XML/daily.xml")
 NBKR_TIMEOUT = env.int("NBKR_TIMEOUT", default=10)
 

@@ -7,7 +7,8 @@
 
 from django.conf import settings
 from django.db import models
-from django.utils import timezone
+from django.db.models import Q
+from django.utils import timezone as django_timezone
 
 from apps.common.models import TimeStampedModel
 
@@ -25,6 +26,11 @@ class NotificationType(models.TextChoices):
 class DevicePlatform(models.TextChoices):
     ANDROID = "android", "Android"
     IOS = "ios", "iOS"
+
+
+class DeviceLocale(models.TextChoices):
+    RU = "ru", "Русский"
+    KY = "ky", "Кыргызча"
 
 
 class Notification(TimeStampedModel):
@@ -46,6 +52,13 @@ class Notification(TimeStampedModel):
     title = models.CharField("Заголовок", max_length=140)
     body = models.TextField("Текст", blank=True)
     payload = models.JSONField("Данные", default=dict, blank=True)
+    event_key = models.CharField(
+        "Ключ доменного события",
+        max_length=160,
+        blank=True,
+        default="",
+        help_text="Идемпотентность fan-out: один пользователь получает событие один раз.",
+    )
     listing = models.ForeignKey(
         "catalog.Listing",
         verbose_name="Объявление",
@@ -67,6 +80,13 @@ class Notification(TimeStampedModel):
                 name="notification_user_unread_idx",
             ),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "event_key"],
+                condition=~Q(event_key=""),
+                name="notification_user_event_unique",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.get_type_display()}: {self.title}"
@@ -85,11 +105,25 @@ class DeviceToken(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="devices",
     )
-    token = models.CharField("Токен", max_length=255, unique=True)
+    token = models.CharField("Токен", max_length=512, unique=True)
     platform = models.CharField("Платформа", max_length=16, choices=DevicePlatform.choices)
+    device_id = models.CharField(
+        "ID установки",
+        max_length=64,
+        unique=True,
+        blank=True,
+        null=True,
+    )
     app_version = models.CharField("Версия приложения", max_length=32, blank=True)
+    locale = models.CharField(
+        "Язык",
+        max_length=8,
+        choices=DeviceLocale.choices,
+        default=DeviceLocale.RU,
+    )
+    timezone = models.CharField("Часовой пояс", max_length=64, default="Asia/Bishkek")
     is_active = models.BooleanField("Активен", default=True, db_index=True)
-    last_seen_at = models.DateTimeField("Последняя активность", default=timezone.now)
+    last_seen_at = models.DateTimeField("Последняя активность", default=django_timezone.now)
 
     class Meta:
         verbose_name = "Устройство"
@@ -102,6 +136,68 @@ class DeviceToken(TimeStampedModel):
     def __str__(self) -> str:
         # Токен целиком в строку не выводим: он попадает в админку и логи.
         return f"{self.get_platform_display()} · …{self.token[-6:]}"
+
+
+class PushOutboxStatus(models.TextChoices):
+    PENDING = "pending", "Ожидает"
+    PROCESSING = "processing", "В обработке"
+    SENT = "sent", "Отправлено"
+    RETRY = "retry", "Повтор"
+    FAILED = "failed", "Не удалось"
+    SKIPPED_DISABLED = "skipped_disabled", "Пропущено: push выключен"
+
+
+class PushOutbox(models.Model):
+    """Очередь доставки push прямо в PostgreSQL.
+
+    Брокера здесь нет намеренно. На сервере 458 МБ памяти, из них свободно
+    около 155; Redis и воркер Celery вдвоём съели бы больше, чем остаётся до
+    порога безопасности. Очередь в той же базе, что и уведомления, стоит
+    ноль дополнительной памяти.
+
+    Заодно это надёжнее связки «commit → положить в брокер»: там между
+    коммитом и постановкой в очередь есть щель, в которую процесс может
+    умереть, и уведомление останется недоставленным навсегда. Строка outbox
+    пишется в той же транзакции, что и само уведомление, поэтому либо есть
+    оба, либо нет ни одного.
+
+    Само уведомление остаётся источником правды: outbox знает только его
+    идентификатор и состояние доставки, копии текста здесь нет.
+    """
+
+    notification = models.OneToOneField(
+        "notifications.Notification",
+        verbose_name="Уведомление",
+        on_delete=models.CASCADE,
+        related_name="push_outbox",
+    )
+    status = models.CharField(
+        "Состояние",
+        max_length=20,
+        choices=PushOutboxStatus.choices,
+        default=PushOutboxStatus.PENDING,
+        db_index=True,
+    )
+    attempts = models.PositiveSmallIntegerField("Попыток", default=0)
+    next_attempt_at = models.DateTimeField("Следующая попытка", default=django_timezone.now)
+    # Момент захвата строки воркером. По нему подбираются записи, зависшие в
+    # processing из-за упавшего процесса: без этого они остались бы навсегда.
+    locked_at = models.DateTimeField("Взято в работу", null=True, blank=True)
+    last_error = models.CharField("Последняя ошибка", max_length=255, blank=True, default="")
+    sent_at = models.DateTimeField("Отправлено", null=True, blank=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Очередь push"
+        verbose_name_plural = "Очередь push"
+        ordering = ["next_attempt_at", "id"]
+        indexes = [
+            models.Index(fields=["status", "next_attempt_at"], name="push_outbox_due_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"push #{self.notification_id}: {self.get_status_display()}"
 
 
 class NotificationSettings(models.Model):
@@ -121,6 +217,10 @@ class NotificationSettings(models.Model):
 
     new_message_enabled = models.BooleanField("Новые сообщения", default=True)
     price_drop_enabled = models.BooleanField("Снижение цены", default=True)
+    price_drop_viewed_enabled = models.BooleanField(
+        "Снижение цены просмотренных объектов",
+        default=True,
+    )
     saved_filter_enabled = models.BooleanField("Новые объекты по фильтру", default=True)
     listing_moderated_enabled = models.BooleanField("Модерация объявлений", default=True)
     promotion_expiring_enabled = models.BooleanField("Продвижение заканчивается", default=True)
@@ -145,9 +245,27 @@ class NotificationSettings(models.Model):
         NotificationType.SYSTEM: "system_enabled",
     }
 
+    #: Настройки, которые уточняют тип по поводу события. Снижение цены
+    #: приходит по двум разным причинам, и отключают их отдельно: «по
+    #: избранному» человек обычно оставляет, а «по просмотренному» — нет.
+    REASON_FIELDS = {
+        (NotificationType.PRICE_DROP, "viewed"): "price_drop_viewed_enabled",
+    }
+
     def allows(self, notification_type: str) -> bool:
         """Разрешён ли push этого типа."""
         if not self.push_enabled:
             return False
         field = self.TYPE_FIELDS.get(notification_type)
+        return bool(getattr(self, field, True)) if field else True
+
+    def allows_reason(self, notification_type: str, reason: str | None) -> bool:
+        """Разрешён ли push с учётом повода события.
+
+        Сначала общий выключатель и тип, затем уточнение по причине: у типа
+        может быть своя настройка на отдельный повод, и она строже общей.
+        """
+        if not self.allows(notification_type):
+            return False
+        field = self.REASON_FIELDS.get((notification_type, reason))
         return bool(getattr(self, field, True)) if field else True
