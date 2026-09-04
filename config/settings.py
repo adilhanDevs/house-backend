@@ -35,7 +35,11 @@ if env_file.exists():
 # ----------------------------------------------------------------------------
 # Ядро
 # ----------------------------------------------------------------------------
-SECRET_KEY = env.str("DJANGO_SECRET_KEY", default="django-insecure-house-kgz-secret-key-prod-2026")
+# Без default: пустой env — ImproperlyConfigured при старте, а не общий ключ
+# для всех окружений. JWT (см. SIMPLE_JWT ниже) подписывается этим же ключом,
+# если JWT_SIGNING_KEY не задан отдельно — ротация SECRET_KEY без отдельного
+# JWT_SIGNING_KEY разлогинит всех разом.
+SECRET_KEY = env.str("DJANGO_SECRET_KEY")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
 
@@ -125,10 +129,10 @@ TEMPLATES = [
 # База данных
 # ----------------------------------------------------------------------------
 DATABASES = {
-    "default": env.db(
-        "DATABASE_URL",
-        default="postgres://quantum_user:Adil2008!@localhost:5432/quantum_db",
-    )
+    # Без default: пустой env — это ImproperlyConfigured при старте, а не
+    # тихий откат на рабочий credential. Реальный пароль лежал здесь же и
+    # теперь навсегда в истории git — до ротации считать его скомпрометированным.
+    "default": env.db("DATABASE_URL")
 }
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("DATABASE_CONN_MAX_AGE", default=60)
