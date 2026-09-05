@@ -164,6 +164,7 @@ def invalidate_page_cache(slug: str | None = None) -> None:
 
 def notify_staff_about_ticket(ticket: SupportTicket) -> None:
     """Письмо в поддержку. Адреса — из SUPPORT_NOTIFY_EMAILS или ADMINS."""
+    from django.utils import timezone
     recipients = list(settings.SUPPORT_NOTIFY_EMAILS) or [
         email for _, email in getattr(settings, "ADMINS", [])
     ]
@@ -182,12 +183,26 @@ def notify_staff_about_ticket(ticket: SupportTicket) -> None:
             ticket.message,
         ]
     )
-    send_mail(
-        subject=f"[house_kgz] Обращение #{ticket.pk}: {ticket.subject}",
-        message=body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=recipients,
-    )
+    
+    if ticket.email_status == SupportTicket.EmailStatus.SENT:
+        return
+        
+    try:
+        send_mail(
+            subject=f"[house_kgz] Обращение #{ticket.pk}: {ticket.subject}",
+            message=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=recipients,
+        )
+        ticket.email_status = SupportTicket.EmailStatus.SENT
+        ticket.sent_at = timezone.now()
+        ticket.delivery_error = ""
+        ticket.save(update_fields=["email_status", "sent_at", "delivery_error"])
+    except Exception as e:
+        ticket.email_status = SupportTicket.EmailStatus.FAILED
+        ticket.delivery_error = str(e)
+        ticket.save(update_fields=["email_status", "delivery_error"])
+        raise
 
 
 def enqueue_ticket_notification(ticket_id: int) -> None:
