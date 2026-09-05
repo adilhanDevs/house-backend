@@ -217,12 +217,22 @@ def credit_payment(payment: Payment) -> Payment:
         locked.paid_at = timezone.now()
         locked.save(update_fields=["status", "paid_at", "updated_at"])
 
+    title_ru = "Кошелёк пополнен"
+    title_ky = "Капчык толукталды"
+    body_ru = f"+{format_bricks(locked.total_bricks)} кирпичей за {locked.amount_kgs:.0f} сом"
+    body_ky = f"+{format_bricks(locked.total_bricks)} кирпич {locked.amount_kgs:.0f} сом үчүн"
+
     notify(
         user=locked.user,
         notification_type=NotificationType.WALLET_TOPUP,
-        title="Кошелёк пополнен",
-        body=(f"+{format_bricks(locked.total_bricks)} кирпичей за {locked.amount_kgs:.0f} сом"),
-        payload={"payment_id": str(locked.pk), "total_bricks": locked.total_bricks},
+        title=title_ru,
+        body=body_ru,
+        payload={
+            "payment_id": str(locked.pk),
+            "total_bricks": locked.total_bricks,
+            "title_i18n": {"ru": title_ru, "ky": title_ky},
+            "body_i18n": {"ru": body_ru, "ky": body_ky},
+        },
     )
 
     safe(observe_topup, locked.total_bricks)

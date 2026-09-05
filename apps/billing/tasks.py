@@ -59,23 +59,28 @@ def expire_promotions() -> dict[str, int]:
         ).select_related("listing", "listing__owner", "listing__district")
     )
 
-    notify_many(
-        [
-            Notification(
-                user=promotion.listing.owner,
-                type=NotificationType.PROMOTION_EXPIRING,
-                title="Продвижение заканчивается завтра",
-                body=f"«{promotion.listing}» перестанет показываться выше остальных.",
-                payload={
-                    "promotion_id": promotion.pk,
-                    "listing_slug": promotion.listing.slug,
-                    "ends_at": promotion.ends_at.isoformat(),
-                },
-                listing=promotion.listing,
-            )
-            for promotion in expiring
-        ]
-    )
+    for promotion in expiring:
+        title_ru = "Продвижение заканчивается завтра"
+        title_ky = "Жарнама эртең аяктайт"
+        body_ru = f"«{promotion.listing}» перестанет показываться выше остальных."
+        body_ky = f"«{promotion.listing}» мындан ары башкалардан жогору көрсөтүлбөйт."
+        
+        promotion._notification = Notification(
+            user=promotion.listing.owner,
+            type=NotificationType.PROMOTION_EXPIRING,
+            title=title_ru,
+            body=body_ru,
+            payload={
+                "promotion_id": promotion.pk,
+                "listing_slug": promotion.listing.slug,
+                "ends_at": promotion.ends_at.isoformat(),
+                "title_i18n": {"ru": title_ru, "ky": title_ky},
+                "body_i18n": {"ru": body_ru, "ky": body_ky},
+            },
+            listing=promotion.listing,
+        )
+
+    notify_many([promotion._notification for promotion in expiring])
     Promotion.objects.filter(pk__in=[promotion.pk for promotion in expiring]).update(
         expiry_notified_at=now
     )
@@ -155,16 +160,22 @@ def _renew_due_subscriptions() -> tuple[int, int]:
             failed += 1
             subscription.renewal_attempted_at = now
             subscription.save(update_fields=["renewal_attempted_at", "updated_at"])
+            title_ru = "Не удалось продлить подписку"
+            title_ky = "Жазылууну узартууга болбой калды"
+            body_ru = f"На балансе не хватает {cost} кирпичей для тарифа «{subscription.tariff.name}». Пополните баланс, иначе подписка закончится."
+            body_ky = f"«{subscription.tariff.name}» тарифи үчүн баланста {cost} кирпич жетишпейт. Балансты толуктаңыз, болбосо жазылуу аяктайт."
+            
             notify(
                 user=subscription.user,
                 notification_type=NotificationType.SYSTEM,
-                title="Не удалось продлить подписку",
-                body=(
-                    f"На балансе не хватает {cost} кирпичей для тарифа "
-                    f"«{subscription.tariff.name}». Пополните баланс, "
-                    "иначе подписка закончится."
-                ),
-                payload={"kind": "subscription_renew_failed", "required": cost},
+                title=title_ru,
+                body=body_ru,
+                payload={
+                    "kind": "subscription_renew_failed", 
+                    "required": cost,
+                    "title_i18n": {"ru": title_ru, "ky": title_ky},
+                    "body_i18n": {"ru": body_ru, "ky": body_ky},
+                },
             )
             continue
 
@@ -176,15 +187,22 @@ def _renew_due_subscriptions() -> tuple[int, int]:
         )
         renewed += 1
 
+        title_ru = "Подписка продлена"
+        title_ky = "Жазылуу узартылды"
+        body_ru = f"Тариф «{subscription.tariff.name}» продлён до {subscription.ends_at:%d.%m.%Y}. Списано {cost} кирпичей."
+        body_ky = f"«{subscription.tariff.name}» тарифи {subscription.ends_at:%d.%m.%Y} чейин узартылды. {cost} кирпич алынды."
+        
         notify(
             user=subscription.user,
             notification_type=NotificationType.SYSTEM,
-            title="Подписка продлена",
-            body=(
-                f"Тариф «{subscription.tariff.name}» продлён до "
-                f"{subscription.ends_at:%d.%m.%Y}. Списано {cost} кирпичей."
-            ),
-            payload={"kind": "subscription_renewed", "cost": cost},
+            title=title_ru,
+            body=body_ru,
+            payload={
+                "kind": "subscription_renewed", 
+                "cost": cost,
+                "title_i18n": {"ru": title_ru, "ky": title_ky},
+                "body_i18n": {"ru": body_ru, "ky": body_ky},
+            },
         )
 
     return renewed, failed
@@ -245,16 +263,22 @@ def _archive_over_limit(user: object, limit: int) -> int:
     Listing.objects.filter(pk__in=surplus).update(
         status=ListingStatus.ARCHIVED, updated_at=timezone.now()
     )
+    title_ru = "Подписка закончилась"
+    title_ky = "Жазылуу аяктады"
+    body_ru = f"Объявлений сверх лимита ({limit}) перенесено в архив: {len(surplus)}. Их можно вернуть из «Моих объявлений» или оформить тариф."
+    body_ky = f"Лимиттен ашкан ({limit}) жарыялар архивге которулду: {len(surplus)}. Аларды «Менин жарыяларым» бөлүмүнөн кайтарып алсаңыз же тариф тариздесеңиз болот."
+    
     notify(
         user=user,
         notification_type=NotificationType.SYSTEM,
-        title="Подписка закончилась",
-        body=(
-            f"Объявлений сверх лимита ({limit}) перенесено в архив: "
-            f"{len(surplus)}. Их можно вернуть из «Моих объявлений» "
-            "или оформить тариф."
-        ),
-        payload={"kind": "subscription_expired", "archived": len(surplus)},
+        title=title_ru,
+        body=body_ru,
+        payload={
+            "kind": "subscription_expired", 
+            "archived": len(surplus),
+            "title_i18n": {"ru": title_ru, "ky": title_ky},
+            "body_i18n": {"ru": body_ru, "ky": body_ky},
+        },
     )
     return len(surplus)
 

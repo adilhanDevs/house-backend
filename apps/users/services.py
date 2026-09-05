@@ -534,13 +534,23 @@ def notify_identity_result(verification: IdentityVerification) -> None:
 
     approved = verification.status == VerificationStatus.APPROVED
 
+    title_ru = "Личность подтверждена" if approved else "Проверка не пройдена"
+    title_ky = "Өздүгү тастыкталды" if approved else "Текшерүүдөн өткөн жок"
+    body_ru = "" if approved else verification.reject_reason
+    body_ky = body_ru
+
     notify(
         user=verification.user,
         notification_type=NotificationType.SYSTEM,
-        title="Личность подтверждена" if approved else "Проверка не пройдена",
-        body="" if approved else verification.reject_reason,
+        title=title_ru,
+        body=body_ru,
         # Отдельного типа для KYC в списке ТЗ нет — маршрут кладём в payload.
-        payload={"kind": "identity_verification", "verification_id": verification.pk},
+        payload={
+            "kind": "identity_verification",
+            "verification_id": verification.pk,
+            "title_i18n": {"ru": title_ru, "ky": title_ky},
+            "body_i18n": {"ru": body_ru, "ky": body_ky},
+        },
     )
 
 

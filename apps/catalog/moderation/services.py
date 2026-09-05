@@ -172,7 +172,17 @@ def approve_task(task: ModerationTask, moderator: Any) -> ModerationTask:
         listing,
         title="Объявление опубликовано",
         body=f"«{listing}» прошло проверку и появилось в каталоге.",
-        payload={"result": "approved"},
+        payload={
+            "result": "approved",
+            "title_i18n": {
+                "ru": "Объявление опубликовано",
+                "ky": "Жарыя жарыяланды",
+            },
+            "body_i18n": {
+                "ru": f"«{listing}» прошло проверку и появилось в каталоге.",
+                "ky": f"«{listing}» текшерүүдөн өтүп, каталогго кошулду.",
+            }
+        },
     )
     audit(
         actor=moderator,
@@ -238,7 +248,19 @@ def reject_task(
         listing,
         title="Объявление отклонено",
         body="\n".join(filter(None, [reason.title, comment])),
-        payload={"result": "rejected", "reason_code": reason.code, "comment": comment},
+        payload={
+            "result": "rejected",
+            "reason_code": reason.code,
+            "comment": comment,
+            "title_i18n": {
+                "ru": "Объявление отклонено",
+                "ky": "Жарыя четке кагылды",
+            },
+            "body_i18n": {
+                "ru": "\n".join(filter(None, [reason.title, comment])),
+                "ky": "\n".join(filter(None, [reason.title, comment])),
+            }
+        },
     )
     audit(
         actor=moderator,

@@ -74,21 +74,29 @@ def send_message(
         locked.last_message_at = message.created_at
         locked.save(update_fields=["last_message_at", "updated_at"])
         peer = locked.seller if locked.buyer_id == user.pk else locked.buyer
+        sender_name = user.name.strip() or "Собеседник"
+        base_payload = {
+            "conversation_id": str(locked.id),
+            "listing_slug": locked.listing_slug,
+            "sender_id": user.pk,
+            "sender_name": user.name.strip(),
+            "preview": message.text[:140],
+        }
+        base_payload["title_i18n"] = {
+            "ru": "Новое сообщение",
+            "ky": "Жаңы билдирүү",
+        }
+        base_payload["body_i18n"] = {
+            "ru": f"{sender_name} отправил вам сообщение",
+            "ky": f"{sender_name} сизге билдирүү жөнөттү",
+        }
+
         notify(
             peer,
             notification_type=NotificationType.NEW_MESSAGE,
-            title=user.name.strip() or "Новое сообщение",
-            body=message.text[:140],
-            payload={
-                "conversation_id": str(locked.id),
-                "listing_slug": locked.listing_slug,
-                "sender_id": user.pk,
-                # Имя и превью кладём в payload явно, а не только в заголовок
-                # и текст: экран уведомлений и push собирают строку сами, и
-                # разбирать её обратно из title/body — лишняя связность.
-                "sender_name": user.name.strip(),
-                "preview": message.text[:140],
-            },
+            title="Новое сообщение",
+            body=f"{sender_name} отправил вам сообщение",
+            payload=base_payload,
         )
     return message, created
 

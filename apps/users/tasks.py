@@ -213,7 +213,18 @@ def build_data_export(export_id: int) -> str:
         notification_type=NotificationType.SYSTEM,
         title="Выгрузка данных готова",
         body="Файл с вашими данными доступен для скачивания в течение суток.",
-        payload={"kind": "data_export_ready", "export_id": export.pk},
+        payload={
+            "kind": "data_export_ready", 
+            "export_id": export.pk,
+            "title_i18n": {
+                "ru": "Выгрузка данных готова",
+                "ky": "Маалыматтарды көчүрүү даяр",
+            },
+            "body_i18n": {
+                "ru": "Файл с вашими данными доступен для скачивания в течение суток.",
+                "ky": "Сиздин маалыматтарыңыз менен файл бир сутка ичинде жүктөп алууга жеткиликтүү.",
+            }
+        },
     )
     logger.info("Выгрузка %s готова: %s байт", export.pk, export.size_bytes)
     return "ready"
