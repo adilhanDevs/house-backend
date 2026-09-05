@@ -150,6 +150,68 @@ PUSH_DATA_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _is_test_push(notification: Any) -> bool:
+    source = getattr(notification, "payload", None) or {}
+    if source.get("kind") == "test_push":
+        return True
+    title = (
+        str(getattr(notification, "title", "") or "")
+        .lower()
+        .replace("—", "-")
+        .replace("–", "-")
+    )
+    if (
+        "проверка прочтения" in title
+        or "окулганын текшерүү" in title
+        or "проверка уведомлений" in title
+        or "билдирмелерди текшерүү" in title
+    ):
+        return True
+    body = str(getattr(notification, "body", "") or "").lower()
+    if (
+        "контрольное уведомление" in body
+        or "көзөмөл билдирмеси" in body
+        or "push-уведомления работают" in body
+        or "push-билдирмелер иштеп" in body
+    ):
+        return True
+    return False
+
+
+def _localized_payload_text(notification: Any, field: str, locale: str) -> str:
+    source = getattr(notification, "payload", None) or {}
+    i18n = source.get(f"{field}_i18n")
+    if isinstance(i18n, dict):
+        text = str(i18n.get(locale) or "").strip()
+        if text:
+            return text
+    if _is_test_push(notification):
+        defaults = {
+            "title": {
+                "ru": "House KG — проверка прочтения",
+                "ky": "House KG — окулганын текшерүү",
+            },
+            "body": {
+                "ru": (
+                    "Контрольное уведомление. Нажмите, чтобы открыть чат "
+                    "и обновить счётчик."
+                ),
+                "ky": (
+                    "Көзөмөл билдирмеси. Чатты ачып, эсептегичти "
+                    "жаңыртуу үчүн басыңыз."
+                ),
+            },
+        }
+        text = defaults.get(field, {}).get(locale) or defaults.get(field, {}).get("ru")
+        if text:
+            return text
+    if isinstance(i18n, dict):
+        text = str(i18n.get("ru") or "").strip()
+        if text:
+            return text
+    return str(getattr(notification, field, "") or "")
+
+
 def _data_payload(notification: Any) -> dict[str, str]:
     """Данные для перехода по нажатию. Только строки: FCM других не принимает."""
     payload: dict[str, str] = {
@@ -192,13 +254,14 @@ def send_to_user(user: Any, notification: Any) -> int:
         )
         return 0
 
-    # Порядок фиксируем: по нему сопоставляются ответы FCM с токенами.
-    tokens = list(
+    # Порядок фиксируем внутри каждой языковой группы: по нему сопоставляются
+    # ответы FCM с токенами.
+    devices = list(
         DeviceToken.objects.filter(user=user, is_active=True)
         .order_by("pk")
-        .values_list("token", flat=True)
+        .values_list("token", "locale")
     )
-    if not tokens:
+    if not devices:
         return 0
 
     app = get_fcm_app()
@@ -208,17 +271,24 @@ def send_to_user(user: Any, notification: Any) -> int:
     from firebase_admin import messaging
 
     sent = 0
-    for chunk in batched(tokens, FCM_BATCH_SIZE):
-        batch = list(chunk)
-        # tokens=, а не fids=: клиент присылает регистрационные токены FCM.
-        message = messaging.MulticastMessage(
-            tokens=batch,
-            notification=messaging.Notification(title=notification.title, body=notification.body),
-            data=_data_payload(notification),
-        )
-        response = messaging.send_each_for_multicast(message, app=app)
-        sent += getattr(response, "success_count", 0)
-        _deactivate_tokens(batch, response)
+    by_locale: dict[str, list[str]] = {}
+    for token, locale in devices:
+        by_locale.setdefault(locale or "ru", []).append(token)
+
+    for locale, tokens in by_locale.items():
+        title = _localized_payload_text(notification, "title", locale)
+        body = _localized_payload_text(notification, "body", locale)
+        for chunk in batched(tokens, FCM_BATCH_SIZE):
+            batch = list(chunk)
+            # tokens=, а не fids=: клиент присылает регистрационные токены FCM.
+            message = messaging.MulticastMessage(
+                tokens=batch,
+                notification=messaging.Notification(title=title, body=body),
+                data=_data_payload(notification),
+            )
+            response = messaging.send_each_for_multicast(message, app=app)
+            sent += getattr(response, "success_count", 0)
+            _deactivate_tokens(batch, response)
 
     logger.info("Push %s доставлен на %s устройств", notification.pk, sent)
     return sent
