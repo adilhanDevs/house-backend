@@ -260,9 +260,36 @@ class OtpRequestSerializer(serializers.Serializer):
         choices=OtpPurpose.choices,
         default=OtpPurpose.LOGIN,
     )
+    password = serializers.CharField(
+        max_length=128,
+        required=False,
+        allow_blank=True,
+        default="",
+        write_only=True,
+        style={"input_type": "password"},
+    )
+    name = serializers.CharField(
+        max_length=120,
+        required=False,
+        allow_blank=True,
+        default="",
+        write_only=True,
+    )
 
     def validate_phone(self, value: str) -> str:
         return normalize_phone(value)
+
+    def validate(self, attrs: dict) -> dict:
+        purpose = attrs.get("purpose", OtpPurpose.LOGIN)
+        password = attrs.get("password", "")
+        name = attrs.get("name", "")
+        if purpose == OtpPurpose.REGISTER and password:
+            candidate = User(phone=attrs["phone"], name=name)
+            try:
+                validate_password(password, user=candidate)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+        return attrs
 
 
 class OtpRequestResponseSerializer(serializers.Serializer):
